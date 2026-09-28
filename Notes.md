@@ -31,13 +31,13 @@
 - [x] Add the health endpoint and error handling
 
 **Part 2 — User & Auth API**
-- [ ] Create the User model
-- [ ] Register endpoint
-- [ ] Login endpoint
-- [ ] Auth middleware + `/api/auth/me`
-- [ ] Logout endpoint
-- [ ] `/api/users/me` endpoint
-- [ ] Test every endpoint in Postman
+- [x] Create the User model
+- [x] Register endpoint
+- [x] Login endpoint
+- [x] Auth middleware + `/api/auth/me`
+- [x] Logout endpoint
+- [x] `/api/users/me` endpoint
+- [x] Test every endpoint in Postman
 
 **Part 3 — Frontend**
 - [ ] Set up React + Tailwind + Router
