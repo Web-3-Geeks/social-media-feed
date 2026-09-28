@@ -2,7 +2,7 @@
 
 A full-stack social media feed app, built incrementally as a daily internship project (Week 5).
 
-- **Live frontend:** _added after the frontend deploy_
+- **Live app:** https://social-media-feed-ruby.vercel.app
 - **Live API:** https://social-feed-api.vercel.app/api/health
 - **Repo:** https://github.com/Web-3-Geeks/social-media-feed
 
