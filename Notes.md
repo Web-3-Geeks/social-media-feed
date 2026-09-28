@@ -40,14 +40,14 @@
 - [x] Test every endpoint in Postman
 
 **Part 3 — Frontend**
-- [ ] Set up React + Tailwind + Router
-- [ ] Auth context (keeps track of the logged-in user)
-- [ ] Protected routes
-- [ ] Register and Login pages
-- [ ] Dashboard and Profile pages
+- [x] Set up React + Tailwind + Router
+- [x] Auth context (keeps track of the logged-in user)
+- [x] Protected routes
+- [x] Register and Login pages
+- [x] Dashboard and Profile pages
 
 **Part 4 — Finish up**
-- [ ] Test the full flow end to end
-- [ ] Run lint and build, fix any issues
-- [ ] Write the README
-- [ ] Push to GitHub and create the `week5/Day1` snapshot
+- [x] Test the full flow end to end
+- [x] Run lint and build, fix any issues
+- [x] Write the README
+- [x] Push to GitHub and create the `week5/Day1` snapshot
