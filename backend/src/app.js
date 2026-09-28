@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import connectDB from "./config/db.js";
 import cookieParser from "cookie-parser";
 import healthRoutes from "./routes/healthRoutes.js";
 import notFound from "./middleware/notFound.js";
@@ -18,6 +19,10 @@ app.use(
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(async (req, res, next) => {
+  await connectDB();
+  next();
+});
 app.use("/api/health", healthRoutes);
 app.use(notFound);
 app.use(errorHandler);
