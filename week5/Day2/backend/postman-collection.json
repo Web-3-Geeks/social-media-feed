@@ -1,0 +1,1732 @@
+{
+  "info": {
+    "_postman_id": "1a66b5b1-8740-46fa-b6d0-3d23a0f525b0",
+    "name": "Social Media Feed App",
+    "description": "REST API for the Social Media Feed App (Week 5).\n\n## Authentication\nAuth uses a **JWT stored in an httpOnly cookie** named `token`. The token is never returned in the response body. Postman stores the cookie after **Login** and sends it automatically with later requests, the same way a browser does.\n\n## How to use\n1. Set `baseUrl`, in the collection **Variables** tab:\n   - Local: `http://localhost:5000/api`\n   - Live: `https://social-feed-api.vercel.app/api`\n2. Run the requests in order (top to bottom), or use **Run collection**. Every request has tests that check the status code and response shape.\n3. **Register** generates a fresh email each run and saves it in `testEmail`, so the whole collection can be re-run without duplicate-email failures. The fixed demo account for manual testing is `test@example.com` / `password123`.\n\n## Response format\nSuccess: `{ \"success\": true, ... }`\n\nError: `{ \"success\": false, \"message\": \"...\", \"errors\": { \"field\": \"message\" } }`. `errors` is only present on validation failures.\n\n## Status codes\n| Code | Meaning |\n|---|---|\n| 200 | OK |\n| 201 | Created (register) |\n| 400 | Validation failed / invalid JSON |\n| 401 | Not authenticated, invalid or expired token, wrong credentials |\n| 403 | Not the owner of the post |\n| 404 | Route or post not found |\n| 409 | Email already registered |\n| 503 | Health check: database disconnected |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "46357609"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Database is connected\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql(\"ok\");",
+                  "  pm.expect(body.database).to.eql(\"connected\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Checks that the server is running and connected to MongoDB.\n\n- **200**: `status: \"ok\"`, `database: \"connected\"`\n- **503**: `status: \"degraded\"`, the server is up but the database is disconnected\n\nAlso returns `uptime` (seconds) and `timestamp`. Public, no auth needed. On the live Vercel URL the first request after idle time can take a few seconds (cold start)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Service status endpoint, used for monitoring and debugging."
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Unique email per run so the collection can be re-run without a 409.",
+                  "// Mixed case on purpose: the API should store it lowercased.",
+                  "const email = `TestUser${Date.now()}@Example.com`;",
+                  "pm.collectionVariables.set(\"testEmail\", email.toLowerCase());",
+                  "pm.collectionVariables.set(\"registerEmail\", email);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Returns the user without the password\", () => {",
+                  "  pm.expect(body.success).to.eql(true);",
+                  "  pm.expect(body.user).to.have.property(\"id\");",
+                  "  pm.expect(body.user).to.not.have.property(\"password\");",
+                  "  pm.expect(body.user).to.not.have.property(\"_id\");",
+                  "});",
+                  "pm.test(\"Email is stored lowercased\", () => {",
+                  "  pm.expect(body.user.email).to.eql(pm.collectionVariables.get(\"testEmail\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"{{registerEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Creates a new user account.\n\n**Body**\n| Field | Rules |\n|---|---|\n| `name` | Required, 2-50 characters, trimmed |\n| `email` | Required, valid email, stored lowercased, must be unique |\n| `password` | Required, 8-72 characters, at least one letter and one number |\n\nOnly these three fields are saved. Extra fields like `role` are ignored. The password is hashed with bcrypt before it is stored and is never returned.\n\n**Responses**\n- **201**: `Registration successful` plus the user object (`id`, `name`, `email`, `avatar`, `bio`, `createdAt`, `updatedAt`)\n- **400**: validation errors, per field\n- **409**: `Email is already registered`\n\nThe pre-request script generates a unique email each run and saves it for the Login request."
+          },
+          "response": []
+        },
+        {
+          "name": "Register - Validation Errors",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Returns an error for every invalid field\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.message).to.eql(\"Validation failed\");",
+                  "  pm.expect(body.errors).to.have.all.keys(\"name\", \"email\", \"password\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"email\": \"abc\",\n  \"password\": \"short\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Sends invalid data in every field to show that all validation errors come back together, keyed by field name, so the frontend can show each message under its input.\n\n**Expected (400)**\n```json\n{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": {\n    \"name\": \"Name is required\",\n    \"email\": \"Please provide a valid email\",\n    \"password\": \"Password must be 8-72 characters\"\n  }\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "Register - Duplicate Email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"Explains the email is taken\", () => {",
+                  "  pm.expect(pm.response.json().message).to.eql(\"Email is already registered\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Registers again with the email from the Register request. Run Register first.\n\n**Expected (409)**: `Email is already registered`"
+          },
+          "response": []
+        },
+        {
+          "name": "Login - Wrong Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"Uses the generic credentials message\", () => {",
+                  "  pm.expect(pm.response.json().message).to.eql(\"Invalid email or password\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"wrongpass123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Correct email, wrong password.\n\n**Expected (401)**: `Invalid email or password`. No cookie is set."
+          },
+          "response": []
+        },
+        {
+          "name": "Login - Unknown Email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"Same message as wrong password (no user enumeration)\", () => {",
+                  "  pm.expect(pm.response.json().message).to.eql(\"Invalid email or password\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nobody@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Email that is not registered.\n\n**Expected (401)**: exactly the same response as a wrong password. The API doesn't reveal whether the email exists, which protects against user enumeration."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Returns the user without password or token\", () => {",
+                  "  pm.expect(body.success).to.eql(true);",
+                  "  pm.expect(body.user).to.not.have.property(\"password\");",
+                  "  pm.expect(body).to.not.have.property(\"token\");",
+                  "});",
+                  "pm.test(\"Sets an httpOnly token cookie\", () => {",
+                  "  const setCookie = pm.response.headers.get(\"Set-Cookie\") || \"\";",
+                  "  pm.expect(setCookie).to.include(\"token=\");",
+                  "  pm.expect(setCookie).to.include(\"HttpOnly\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in with email and password.\n\n**Body**: `email` and `password`, both required.\n\n**Responses**\n- **200**: `Login successful` plus the user object. A `token` cookie is set with `HttpOnly`, a 7-day `Max-Age`, and `SameSite=Lax` locally or `SameSite=None; Secure` in production.\n- **400**: missing fields\n- **401**: `Invalid email or password`, the same message whether the email or the password is wrong\n\nThe JWT is **only** in the cookie, never in the body, so frontend JavaScript can't read it (XSS protection). Postman saves the cookie and sends it with the next requests.\n\nTo log in with the demo account instead, change the body to `test@example.com` / `password123`."
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns the logged-in user\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.user.email).to.eql(pm.collectionVariables.get(\"testEmail\"));",
+                  "  pm.expect(body.user).to.not.have.property(\"password\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "🔒 **Protected.** Returns the currently authenticated user. The frontend calls this on page load to restore the session.\n\nThe `protect` middleware reads the `token` cookie, verifies the JWT signature and expiry, and loads the user from the database.\n\n**Responses**\n- **200**: `{ success: true, user }`\n- **401**: one of:\n  - `Not authenticated. Please log in.`: no cookie\n  - `Invalid token. Please log in again.`: tampered or malformed token\n  - `Session expired. Please log in again.`: token past its 7-day expiry\n  - `User no longer exists. Please log in again.`: account was deleted\n\nRun **Login** first."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Clears the token cookie\", () => {",
+                  "  const setCookie = pm.response.headers.get(\"Set-Cookie\") || \"\";",
+                  "  pm.expect(setCookie).to.include(\"token=;\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Logs out by clearing the `token` cookie. It sends back an expired cookie with the same options it was set with, so the browser deletes it.\n\n**Not protected on purpose:** logout must still work when the token has already expired. Otherwise the stale cookie would stay in the browser.\n\n**Response (200)**: `Logged out successfully`\n\nIt uses `POST`, not `GET`, so that links, image tags, or browser prefetching can't log a user out."
+          },
+          "response": []
+        },
+        {
+          "name": "Me - After Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"Rejects the unauthenticated request\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.success).to.eql(false);",
+                  "  pm.expect(body.message).to.eql(\"Not authenticated. Please log in.\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Same as **Me**, but run after **Logout** to confirm the session has ended.\n\n**Expected (401)**: `Not authenticated. Please log in.`"
+          },
+          "response": []
+        }
+      ],
+      "description": "Registration, login, logout, and session check.\n\nAuth is a JWT in an httpOnly cookie named `token`, valid for 7 days. Requests marked 🔒 need a valid cookie, so run **Login** first."
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// This folder runs after Logout, so log in again to get a fresh cookie.",
+                  "pm.sendRequest({",
+                  "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+                  "  method: \"POST\",",
+                  "  header: { \"Content-Type\": \"application/json\" },",
+                  "  body: {",
+                  "    mode: \"raw\",",
+                  "    raw: JSON.stringify({",
+                  "      email: pm.collectionVariables.get(\"testEmail\"),",
+                  "      password: \"password123\"",
+                  "    })",
+                  "  }",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns the profile fields\", () => {",
+                  "  const user = pm.response.json().user;",
+                  "  pm.expect(user).to.include.all.keys(\"id\", \"name\", \"email\", \"avatar\", \"bio\", \"createdAt\", \"updatedAt\");",
+                  "  pm.expect(user).to.not.have.property(\"password\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "🔒 **Protected.** Returns the logged-in user's profile for the Profile page: `id`, `name`, `email`, `avatar`, `bio`, `createdAt` (join date), and `updatedAt`.\n\n**How it differs from `/auth/me`:** `/auth/me` answers \"who is logged in?\" for the session check. `/users/me` is the profile resource. Profile editing (`PATCH /users/me`) and public profiles (`GET /users/:id`) will be added here later.\n\n**Responses**\n- **200**: `{ success: true, user }`\n- **401**: not authenticated\n\nThe pre-request script logs in first, because this runs after Logout in the collection order."
+          },
+          "response": []
+        }
+      ],
+      "description": "User profile endpoints. More will be added on later days (profile editing, public profiles)."
+    },
+    {
+      "name": "Posts",
+      "description": "Create, read, update, and delete posts, and read the feed. 🔒 Every request needs a logged-in user. The folder's pre-request script logs in with `testEmail` (set by Auth → Register) and falls back to the demo account.\n\nUpdate and delete are owner-only. See **Posts - Ownership** for the 403 cases.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Log in before each request in this folder, so it works after Auth → Logout",
+              "// and when the folder is run on its own.",
+              "pm.sendRequest({",
+              "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+              "  method: \"POST\",",
+              "  header: { \"Content-Type\": \"application/json\" },",
+              "  body: { mode: \"raw\", raw: JSON.stringify({",
+              "    email: pm.collectionVariables.get(\"testEmail\") || \"test@example.com\",",
+              "    password: \"password123\"",
+              "  }) }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Create Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const post = pm.response.json().post;",
+                  "pm.test(\"Returns the post with basic author info only\", () => {",
+                  "  pm.expect(post).to.include.all.keys(\"id\", \"content\", \"imageUrl\", \"createdAt\", \"author\");",
+                  "  pm.expect(post.author).to.have.all.keys(\"id\", \"name\", \"avatar\");",
+                  "});",
+                  "pm.test(\"Content is trimmed\", () => pm.expect(post.content).to.eql(\"Working on my new project today!\"));",
+                  "pm.collectionVariables.set(\"postId\", post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"  Working on my new project today!  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Creates a post for the logged-in user.\n\n**Body**\n| Field | Rules |\n|---|---|\n| `content` | Required, text, trimmed, 1–500 characters |\n| `imageUrl` | Optional, must be an `https://` URL. Empty or missing means no image. |\n\nThe author always comes from the session, never from the body. Extra fields like `author` or `likesCount` are ignored.\n\n**Responses**\n- **201**: `Post created` plus the post, with `author: { id, name, avatar }`\n- **400**: validation errors\n- **401**: not logged in\n\nSaves the new post's id in `postId` for later requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post - With Image",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Image URL is saved\", () => pm.expect(pm.response.json().post.imageUrl).to.eql(\"https://picsum.photos/600/400\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Post with an image\",\n  \"imageUrl\": \"https://picsum.photos/600/400\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Same as Create Post, with the optional `imageUrl`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post - Ignores Extra Fields",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const post = pm.response.json().post;",
+                  "pm.test(\"likesCount can't be set by the client\", () => pm.expect(post.likesCount).to.eql(0));",
+                  "pm.test(\"Author is the logged-in user, not the one in the body\", () => {",
+                  "  pm.expect(post.author.id).to.not.eql(\"000000000000000000000000\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Trying to fake fields\",\n  \"author\": \"000000000000000000000000\",\n  \"likesCount\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Security check. Sends a fake `author` and `likesCount`. Only `content` and `imageUrl` are read from the body, so the post belongs to the logged-in user and `likesCount` stays `0`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post - Empty Content",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Rejects empty content\", () => pm.expect(pm.response.json().errors.content).to.eql(\"Post content cannot be empty\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Whitespace-only content is trimmed to an empty string and rejected.\n\n**Expected (400)**: `errors.content = \"Post content cannot be empty\"`"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post - Too Long",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"longText\", \"a\".repeat(501));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Rejects content over 500 characters\", () => pm.expect(pm.response.json().errors.content).to.eql(\"Content cannot exceed 500 characters\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"{{longText}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 The pre-request script builds a 501-character string (`\"a\".repeat(501)`).\n\n**Expected (400)**: `Content cannot exceed 500 characters`"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post - Invalid Image URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Rejects non-https URLs\", () => pm.expect(pm.response.json().errors.imageUrl).to.eql(\"Image URL must be a valid https:// link\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Hello\",\n  \"imageUrl\": \"javascript:alert(1)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Only `https://` URLs are accepted (http images are blocked on an https site), because the URL is rendered in an `<img>` tag. This blocks `javascript:` URLs and plain text.\n\n**Expected (400)**: `Image URL must be a valid https:// link`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Feed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const { posts, pagination } = pm.response.json();",
+                  "pm.test(\"Newest first\", () => {",
+                  "  for (let i = 1; i < posts.length; i++) {",
+                  "    pm.expect(new Date(posts[i - 1].createdAt) >= new Date(posts[i].createdAt)).to.eql(true);",
+                  "  }",
+                  "});",
+                  "pm.test(\"Authors expose only id, name, avatar\", () => {",
+                  "  posts.forEach((p) => pm.expect(p.author).to.have.all.keys(\"id\", \"name\", \"avatar\"));",
+                  "});",
+                  "pm.test(\"Has pagination info\", () => {",
+                  "  pm.expect(pagination).to.include.all.keys(\"page\", \"limit\", \"total\", \"totalPages\", \"hasMore\");",
+                  "  pm.expect(pagination.page).to.eql(1);",
+                  "  pm.expect(pagination.limit).to.eql(10);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "description": "🔒 The social feed: all posts, newest first. Defaults to `page=1`, `limit=10`.\n\nEach post includes `author: { id, name, avatar }` only, with no email or other private fields.\n\n**Response (200)**\n```json\n{\n  \"success\": true,\n  \"posts\": [ ... ],\n  \"pagination\": { \"page\": 1, \"limit\": 10, \"total\": 42, \"totalPages\": 5, \"hasMore\": true }\n}\n```\nThe frontend uses `hasMore` to decide whether to show \"Load more\"."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Feed - Page 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const { posts, pagination } = pm.response.json();",
+                  "pm.test(\"Returns the requested page\", () => {",
+                  "  pm.expect(pagination.page).to.eql(2);",
+                  "  pm.expect(pagination.limit).to.eql(2);",
+                  "  pm.expect(posts.length).to.be.at.most(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?page=2&limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "2"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "🔒 Pagination with query params. `page` starts at 1. `limit` is 1–50.\n\n`skip = (page - 1) * limit`. Posts are sorted by `createdAt` then `_id` (both descending), so the order is stable and a post never appears on two pages."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Feed - Invalid Pagination",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Errors for page and limit\", () => pm.expect(pm.response.json().errors).to.have.all.keys(\"page\", \"limit\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?page=0&limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "🔒 `page` must be ≥ 1 and `limit` 1–50. The cap stops clients from fetching every post in one request.\n\n**Expected (400)**: errors for both `page` and `limit`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Feed - Load More (Cursor)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Fetch the first 2 posts and use the last one as the cursor.",
+                  "pm.sendRequest({ url: pm.collectionVariables.get(\"baseUrl\") + \"/posts?page=1&limit=2\", method: \"GET\" }, (err, res) => {",
+                  "  const last = res.json().posts.slice(-1)[0];",
+                  "  pm.variables.set(\"cursorDate\", last.createdAt);",
+                  "  pm.variables.set(\"cursorId\", last.id);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const { posts, pagination } = pm.response.json();",
+                  "pm.test(\"Only posts older than the cursor\", () => {",
+                  "  const cursor = new Date(pm.variables.get(\"cursorDate\"));",
+                  "  posts.forEach((p) => pm.expect(new Date(p.createdAt) <= cursor).to.eql(true));",
+                  "  pm.expect(posts.map((p) => p.id)).to.not.include(pm.variables.get(\"cursorId\"));",
+                  "});",
+                  "pm.test(\"Cursor pagination info\", () => pm.expect(pagination).to.have.all.keys(\"limit\", \"hasMore\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?before={{cursorDate}}&beforeId={{cursorId}}&limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "{{cursorDate}}"
+                },
+                {
+                  "key": "beforeId",
+                  "value": "{{cursorId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "🔒 **Cursor mode**, used by the frontend's Load more button. Returns posts older than the given post (`before` = its `createdAt`, `beforeId` = its `id`).\n\nUnlike `?page=`, a cursor can't repeat or skip posts when posts are created or deleted between requests. Both params must be sent together.\n\n**Response (200)**: `{ posts, pagination: { limit, hasMore } }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const post = pm.response.json().post;",
+                  "pm.test(\"Returns the requested post\", () => pm.expect(post.id).to.eql(pm.collectionVariables.get(\"postId\")));",
+                  "pm.test(\"Author has only id, name, avatar\", () => pm.expect(post.author).to.have.all.keys(\"id\", \"name\", \"avatar\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{postId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{postId}}"
+              ]
+            },
+            "description": "🔒 Returns one post by id, with `author: { id, name, avatar }`.\n\n**Responses**\n- **200**: `{ success, post }`\n- **400**: `Invalid post id` (not a MongoDB id)\n- **404**: `Post not found`\n\nUses `postId` from Create Post."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Post - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Says the post was not found\", () => pm.expect(pm.response.json().message).to.eql(\"Post not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/000000000000000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "000000000000000000000000"
+              ]
+            },
+            "description": "🔒 A valid id that doesn't exist.\n\n**Expected (404)**: `Post not found`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Post - Invalid Id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Invalid id error\", () => pm.expect(pm.response.json().errors.id).to.eql(\"Invalid post id\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "abc"
+              ]
+            },
+            "description": "🔒 `abc` isn't a MongoDB id, so validation rejects it before the database is queried.\n\n**Expected (400)**: `errors.id = \"Invalid post id\"`"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const post = pm.response.json().post;",
+                  "pm.test(\"Content and image are updated\", () => {",
+                  "  pm.expect(post.content).to.eql(\"Edited: shipped the first version today!\");",
+                  "  pm.expect(post.imageUrl).to.eql(\"https://picsum.photos/600/300\");",
+                  "});",
+                  "pm.test(\"updatedAt moved forward\", () => pm.expect(new Date(post.updatedAt) > new Date(post.createdAt)).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{postId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{postId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Edited: shipped the first version today!\",\n  \"imageUrl\": \"https://picsum.photos/600/300\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 **Owner only.** Updates `content` and/or `imageUrl`. Only the fields you send are changed. Send `imageUrl: \"\"` to remove the image.\n\nSame rules as Create Post, and at least one of the two fields is required.\n\n**Responses**\n- **200**: `Post updated` plus the updated post (`updatedAt` changes)\n- **400**: validation errors, or `errors.body = \"Nothing to update\"`\n- **403**: `You can only modify your own posts`\n- **404**: `Post not found`"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Post - Remove Image",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const post = pm.response.json().post;",
+                  "pm.test(\"Image removed, content unchanged\", () => {",
+                  "  pm.expect(post.imageUrl).to.eql(\"\");",
+                  "  pm.expect(post.content).to.eql(\"Edited: shipped the first version today!\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{postId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{postId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageUrl\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Sends only `imageUrl: \"\"`. The image is removed and the content stays the same."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Post - Nothing To Update",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Nothing to update\", () => pm.expect(pm.response.json().errors.body).to.eql(\"Nothing to update\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{postId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{postId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 An empty body has nothing to change.\n\n**Expected (400)**: `errors.body = \"Nothing to update\"`"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Post - Empty Content",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Rejects empty content\", () => pm.expect(pm.response.json().errors.content).to.eql(\"Post content cannot be empty\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{postId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{postId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 If `content` is sent, it can't be empty.\n\n**Expected (400)**: `Post content cannot be empty`"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Confirms which post was deleted\", () => {",
+                  "  pm.expect(body.message).to.eql(\"Post deleted\");",
+                  "  pm.expect(body.id).to.eql(pm.collectionVariables.get(\"postId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{postId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{postId}}"
+              ]
+            },
+            "description": "🔒 **Owner only.** Permanently deletes the post.\n\n**Responses**\n- **200**: `{ success: true, message: \"Post deleted\", id }`. The frontend uses `id` to remove the card.\n- **403**: `You can only modify your own posts`\n- **404**: `Post not found`"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Post - Already Deleted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Says the post was not found\", () => pm.expect(pm.response.json().message).to.eql(\"Post not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{postId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{postId}}"
+              ]
+            },
+            "description": "🔒 Deleting the same post again.\n\n**Expected (404)**: `Post not found`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Posts - Ownership",
+      "description": "Proves users can't edit or delete other users' posts. The requests run in order:\n\n1. Register a second user (`otherEmail`)\n2. Log in as that user\n3. Create a post as that user (`otherPostId`)\n4. Log back in as the main user\n5. Try to edit and delete the other user's post. Both return **403**.",
+      "item": [
+        {
+          "name": "Register Other User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"otherEmail\", `other${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Other User\",\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a second account with a fresh email for the ownership tests."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Sets the auth cookie for the second user."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"otherPostId\", pm.response.json().post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"This post belongs to another user\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a post owned by the second user and saves its id in `otherPostId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches the cookie back to the main user (`testEmail`, or the demo account if Register wasn't run)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Other User's Post - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Explains why\", () => pm.expect(pm.response.json().message).to.eql(\"You can only modify your own posts\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{otherPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{otherPostId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Trying to edit someone else's post\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 The main user tries to edit the second user's post.\n\n**Expected (403)**: `You can only modify your own posts`. The post is unchanged."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Other User's Post - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Explains why\", () => pm.expect(pm.response.json().message).to.eql(\"You can only modify your own posts\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{otherPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{otherPostId}}"
+              ]
+            },
+            "description": "🔒 The main user tries to delete the second user's post.\n\n**Expected (403)**: `You can only modify your own posts`. The post still exists."
+          },
+          "response": []
+        },
+        {
+          "name": "Other User's Post Still Exists",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content unchanged\", () => pm.expect(pm.response.json().post.content).to.eql(\"This post belongs to another user\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{otherPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{otherPostId}}"
+              ]
+            },
+            "description": "🔒 Confirms the forbidden edit and delete didn't change anything."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string",
+      "description": "API base URL. Local: http://localhost:5000/api, Live: https://social-feed-api.vercel.app/api"
+    },
+    {
+      "key": "testEmail",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically by Register (lowercased). Used by Login, Me, and the duplicate-email test."
+    },
+    {
+      "key": "registerEmail",
+      "value": "",
+      "type": "string",
+      "description": "Mixed-case version of testEmail sent to Register, to check that the API lowercases it."
+    },
+    {
+      "key": "postId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Posts → Create Post. Used by the single-post, update, and delete requests."
+    },
+    {
+      "key": "otherEmail",
+      "value": "",
+      "type": "string",
+      "description": "Set by Posts - Ownership → Register Other User."
+    },
+    {
+      "key": "otherPostId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Posts - Ownership → Create Post as Other User."
+    }
+  ]
+}

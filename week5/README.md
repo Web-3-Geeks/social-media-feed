@@ -7,5 +7,6 @@ To run a snapshot, follow the root README inside that folder (`npm install` in `
 | Day | Focus | Highlights |
 |---|---|---|
 | [Day1](Day1/) | Project setup, database design, authentication | Express 5 + MongoDB Atlas API; register, login, logout, `/auth/me`, `/users/me`; JWT in an httpOnly cookie; React auth flow with protected routes; Dashboard and Profile pages; Vercel deployment |
+| [Day2](Day2/) | Posts, feed and content management | Post model linked to User; create, feed, single, owner-only edit/delete API; feed on Home with composer, post cards, inline edit, delete confirmation, Load more (cursor); security hardening (rate limiting, helmet, timing-safe login, SameSite=Lax, session-expiry handling) |
 
 `archive/` is reserved for deprecated or old files.
