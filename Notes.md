@@ -87,7 +87,7 @@
 - [x] Load more button, no duplicates, "No more posts" message
 
 **Part 4 — Finish up**
-- [ ] Test the full flow end to end (local + live)
+- [x] Test the full flow end to end (local + live)
 - [x] Lint, build, audit (a11y, edge cases, empty feed)
 - [x] README Day 2 section
-- [ ] Commit, `week5/Day2` snapshot, push
+- [x] Commit, `week5/Day2` snapshot, push
