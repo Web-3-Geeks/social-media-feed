@@ -51,3 +51,43 @@
 - [x] Run lint and build, fix any issues
 - [x] Write the README
 - [x] Push to GitHub and create the `week5/Day1` snapshot
+
+---
+
+## Week 5 · Day 2 — Posts, Feed & Content Management
+
+**Goal:** A logged-in user can Create Post → See it in Feed → See other users' posts → Edit own post → Delete own post → Load more.
+
+### Decisions
+
+- **The feed lives on the Home page (`/`).** The Create Post form is at the top, with the feed below it.
+- **Page-based pagination** (`?page=1&limit=10`), as in the task. The frontend skips any post already in the list, so new posts can't cause duplicates.
+
+### Today's plan
+
+**Part 1 — Posts API**
+- [x] Post model (author → User, content, imageUrl, timestamps)
+- [x] Post validators (content required, max length, valid image URL)
+- [x] `POST /api/posts`: create a post
+- [x] `GET /api/posts`: feed, newest first, with pagination
+- [x] `GET /api/posts/:id`: single post (404 if missing)
+- [x] `PATCH /api/posts/:id`: edit (owner only, 403 otherwise)
+- [x] `DELETE /api/posts/:id`: delete (owner only)
+- [x] Test in Postman and update the collection
+
+**Part 2 — Feed UI**
+- [ ] Feed on the Home page: loads the first page
+- [ ] Post card: author, time, content, optional image; "You" badge on own posts
+- [ ] Create Post form: textarea, image URL, character counter, loading, errors
+- [ ] New post appears in the feed right after it's created
+
+**Part 3 — Post actions & pagination**
+- [ ] Edit post (inline) + Cancel
+- [ ] Delete post with confirmation
+- [ ] Load more button, no duplicates, "No more posts" message
+
+**Part 4 — Finish up**
+- [ ] Test the full flow end to end (local + live)
+- [ ] Lint, build, audit (a11y, edge cases, empty feed)
+- [ ] README Day 2 section
+- [ ] Commit, `week5/Day2` snapshot, push
