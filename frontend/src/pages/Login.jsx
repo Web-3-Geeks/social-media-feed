@@ -7,7 +7,7 @@ import { useAuth } from "../hooks/useAuth";
 import { validateLogin } from "../utils/validation";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const location = useLocation();
   const justRegistered = location.state?.registered;
 
@@ -68,6 +68,12 @@ export default function Login() {
         {justRegistered && !serverError && (
           <div role="status" className="rounded-xl bg-green-50 px-3.5 py-2.5 text-sm text-green-700">
             Account created! Please log in.
+          </div>
+        )}
+
+        {sessionExpired && !justRegistered && !serverError && (
+          <div role="status" className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800">
+            Your session has expired. Please log in again.
           </div>
         )}
 

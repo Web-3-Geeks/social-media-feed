@@ -36,7 +36,9 @@ const errorHandler = (err, req, res, next) => {
 
   if (statusCode === 500) {
     console.error(err);
-    if (process.env.NODE_ENV === "production") {
+    // Hide internal details everywhere except local development, so a missing
+    // NODE_ENV can't leak them.
+    if (process.env.NODE_ENV !== "development") {
       message = "Something went wrong";
     }
   }

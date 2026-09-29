@@ -76,18 +76,18 @@
 - [x] Test in Postman and update the collection
 
 **Part 2 — Feed UI**
-- [ ] Feed on the Home page: loads the first page
-- [ ] Post card: author, time, content, optional image; "You" badge on own posts
-- [ ] Create Post form: textarea, image URL, character counter, loading, errors
-- [ ] New post appears in the feed right after it's created
+- [x] Feed on the Home page: loads the first page
+- [x] Post card: author, time, content, optional image; "You" badge on own posts
+- [x] Create Post form: textarea, image URL, character counter, loading, errors
+- [x] New post appears in the feed right after it's created
 
 **Part 3 — Post actions & pagination**
-- [ ] Edit post (inline) + Cancel
-- [ ] Delete post with confirmation
-- [ ] Load more button, no duplicates, "No more posts" message
+- [x] Edit post (inline) + Cancel
+- [x] Delete post with confirmation
+- [x] Load more button, no duplicates, "No more posts" message
 
 **Part 4 — Finish up**
 - [ ] Test the full flow end to end (local + live)
-- [ ] Lint, build, audit (a11y, edge cases, empty feed)
-- [ ] README Day 2 section
+- [x] Lint, build, audit (a11y, edge cases, empty feed)
+- [x] README Day 2 section
 - [ ] Commit, `week5/Day2` snapshot, push

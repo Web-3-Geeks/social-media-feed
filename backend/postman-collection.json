@@ -602,7 +602,7 @@
                 }
               }
             },
-            "description": "🔒 Creates a post for the logged-in user.\n\n**Body**\n| Field | Rules |\n|---|---|\n| `content` | Required, text, trimmed, 1–500 characters |\n| `imageUrl` | Optional, must be an `http(s)://` URL. Empty or missing means no image. |\n\nThe author always comes from the session, never from the body. Extra fields like `author` or `likesCount` are ignored.\n\n**Responses**\n- **201**: `Post created` plus the post, with `author: { id, name, avatar }`\n- **400**: validation errors\n- **401**: not logged in\n\nSaves the new post's id in `postId` for later requests."
+            "description": "🔒 Creates a post for the logged-in user.\n\n**Body**\n| Field | Rules |\n|---|---|\n| `content` | Required, text, trimmed, 1–500 characters |\n| `imageUrl` | Optional, must be an `https://` URL. Empty or missing means no image. |\n\nThe author always comes from the session, never from the body. Extra fields like `author` or `likesCount` are ignored.\n\n**Responses**\n- **201**: `Post created` plus the post, with `author: { id, name, avatar }`\n- **400**: validation errors\n- **401**: not logged in\n\nSaves the new post's id in `postId` for later requests."
           },
           "response": []
         },
@@ -804,7 +804,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"Rejects non-http(s) URLs\", () => pm.expect(pm.response.json().errors.imageUrl).to.eql(\"Image URL must be a valid http(s) link\"));"
+                  "pm.test(\"Rejects non-https URLs\", () => pm.expect(pm.response.json().errors.imageUrl).to.eql(\"Image URL must be a valid https:// link\"));"
                 ]
               }
             }
@@ -835,7 +835,7 @@
                 }
               }
             },
-            "description": "🔒 Only `http://` and `https://` URLs are accepted, because the URL is rendered in an `<img>` tag. This blocks `javascript:` URLs and plain text.\n\n**Expected (400)**: `Image URL must be a valid http(s) link`"
+            "description": "🔒 Only `https://` URLs are accepted (http images are blocked on an https site), because the URL is rendered in an `<img>` tag. This blocks `javascript:` URLs and plain text.\n\n**Expected (400)**: `Image URL must be a valid https:// link`"
           },
           "response": []
         },
@@ -964,6 +964,70 @@
               ]
             },
             "description": "🔒 `page` must be ≥ 1 and `limit` 1–50. The cap stops clients from fetching every post in one request.\n\n**Expected (400)**: errors for both `page` and `limit`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Feed - Load More (Cursor)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Fetch the first 2 posts and use the last one as the cursor.",
+                  "pm.sendRequest({ url: pm.collectionVariables.get(\"baseUrl\") + \"/posts?page=1&limit=2\", method: \"GET\" }, (err, res) => {",
+                  "  const last = res.json().posts.slice(-1)[0];",
+                  "  pm.variables.set(\"cursorDate\", last.createdAt);",
+                  "  pm.variables.set(\"cursorId\", last.id);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const { posts, pagination } = pm.response.json();",
+                  "pm.test(\"Only posts older than the cursor\", () => {",
+                  "  const cursor = new Date(pm.variables.get(\"cursorDate\"));",
+                  "  posts.forEach((p) => pm.expect(new Date(p.createdAt) <= cursor).to.eql(true));",
+                  "  pm.expect(posts.map((p) => p.id)).to.not.include(pm.variables.get(\"cursorId\"));",
+                  "});",
+                  "pm.test(\"Cursor pagination info\", () => pm.expect(pagination).to.have.all.keys(\"limit\", \"hasMore\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?before={{cursorDate}}&beforeId={{cursorId}}&limit=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "{{cursorDate}}"
+                },
+                {
+                  "key": "beforeId",
+                  "value": "{{cursorId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "🔒 **Cursor mode**, used by the frontend's Load more button. Returns posts older than the given post (`before` = its `createdAt`, `beforeId` = its `id`).\n\nUnlike `?page=`, a cursor can't repeat or skip posts when posts are created or deleted between requests. Both params must be sent together.\n\n**Response (200)**: `{ posts, pagination: { limit, hasMore } }`"
           },
           "response": []
         },

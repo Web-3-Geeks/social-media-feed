@@ -34,17 +34,42 @@ export const createPost = async (req, res) => {
   });
 };
 
+const FEED_SORT = { createdAt: -1, _id: -1 };
+
 export const getFeed = async (req, res) => {
-  const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
+
+  // Cursor mode ("load more"): posts older than the last one the client has.
+  // Unlike skip/offset, this can't repeat or skip posts when posts are created
+  // or deleted between requests.
+  if (req.query.before) {
+    const before = new Date(req.query.before);
+    const posts = await Post.find({
+      $or: [
+        { createdAt: { $lt: before } },
+        { createdAt: before, _id: { $lt: req.query.beforeId } },
+      ],
+    })
+      .sort(FEED_SORT)
+      .limit(limit + 1)
+      .populate("author", AUTHOR_FIELDS);
+
+    // Fetching one extra post tells us whether another page exists.
+    const hasMore = posts.length > limit;
+
+    return res.status(200).json({
+      success: true,
+      posts: posts.slice(0, limit),
+      pagination: { limit, hasMore },
+    });
+  }
+
+  // Page mode: ?page=1&limit=10
+  const page = Number(req.query.page) || 1;
   const skip = (page - 1) * limit;
 
   const [posts, total] = await Promise.all([
-    Post.find()
-      .sort({ createdAt: -1, _id: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate("author", AUTHOR_FIELDS),
+    Post.find().sort(FEED_SORT).skip(skip).limit(limit).populate("author", AUTHOR_FIELDS),
     Post.countDocuments(),
   ]);
 

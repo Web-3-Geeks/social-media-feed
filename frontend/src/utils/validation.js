@@ -43,3 +43,23 @@ export function validateLogin({ email, password }) {
 
   return errors;
 }
+
+export const POST_MAX_LENGTH = 500;
+const IMAGE_URL_REGEX = /^https:\/\/\S+$/i;
+
+export function validatePost({ content, imageUrl }) {
+  const errors = {};
+
+  if (!content.trim()) {
+    errors.content = "Post content cannot be empty";
+  } else if (content.trim().length > POST_MAX_LENGTH) {
+    errors.content = `Content cannot exceed ${POST_MAX_LENGTH} characters`;
+  }
+
+  if (imageUrl.trim() && !IMAGE_URL_REGEX.test(imageUrl.trim())) {
+    errors.imageUrl = "Image URL must be a valid https:// link";
+  }
+
+  return errors;
+}
+

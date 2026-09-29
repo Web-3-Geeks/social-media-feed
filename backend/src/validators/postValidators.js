@@ -11,6 +11,15 @@ export const listPostsRules = [
     .isInt({ min: 1, max: 50 })
     .withMessage("Limit must be between 1 and 50")
     .toInt(),
+  // Optional cursor for "load more": the createdAt and id of the last post the client has.
+  query("before").optional().isISO8601().withMessage("before must be an ISO date"),
+  query("beforeId").optional().isMongoId().withMessage("beforeId must be a post id"),
+  query().custom((_, { req }) => {
+    if (Boolean(req.query.before) !== Boolean(req.query.beforeId)) {
+      throw new Error("before and beforeId must be sent together");
+    }
+    return true;
+  }),
 ];
 
 export const createPostRules = [
@@ -23,8 +32,8 @@ export const createPostRules = [
   body("imageUrl")
     .optional({ values: "falsy" })
     .trim()
-    .isURL({ protocols: ["http", "https"], require_protocol: true })
-    .withMessage("Image URL must be a valid http(s) link"),
+    .isURL({ protocols: ["https"], require_protocol: true })
+    .withMessage("Image URL must be a valid https:// link"),
 ];
 
 export const updatePostRules = [
@@ -40,8 +49,8 @@ export const updatePostRules = [
   body("imageUrl")
     .optional({ values: "falsy" })
     .trim()
-    .isURL({ protocols: ["http", "https"], require_protocol: true })
-    .withMessage("Image URL must be a valid http(s) link"),
+    .isURL({ protocols: ["https"], require_protocol: true })
+    .withMessage("Image URL must be a valid https:// link"),
 
   body().custom((_, { req }) => {
     if (req.body?.content === undefined && req.body?.imageUrl === undefined) {

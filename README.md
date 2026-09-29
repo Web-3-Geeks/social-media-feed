@@ -28,21 +28,22 @@ social-media-feed/
 │       ├── server.js             # Local entry: connect DB, then app.listen
 │       ├── app.js                # Express app: middleware, routes, error handling
 │       ├── config/db.js          # Cached MongoDB connection
-│       ├── models/User.js
-│       ├── controllers/          # authController, userController
-│       ├── routes/               # healthRoutes, authRoutes, userRoutes
-│       ├── middleware/           # auth (protect), validate, notFound, errorHandler
-│       ├── validators/           # express-validator rules
+│       ├── models/               # User, Post
+│       ├── controllers/          # authController, userController, postController
+│       ├── routes/               # healthRoutes, authRoutes, userRoutes, postRoutes
+│       ├── middleware/           # auth (protect), validate, rateLimiters, notFound, errorHandler
+│       ├── validators/           # express-validator rules (auth, posts)
 │       └── utils/                # AppError, generateToken, tokenCookie
 ├── frontend/
 │   ├── vercel.json               # SPA fallback + /api proxy to the backend
 │   └── src/
 │       ├── api/axios.js          # Axios instance (baseURL, withCredentials)
 │       ├── context/              # AuthContext + AuthProvider
-│       ├── hooks/useAuth.js
-│       ├── components/           # Route guards, layouts, Navbar, FormInput, Avatar, Logo
+│       ├── hooks/                # useAuth, useFeed (feed state + pagination)
+│       ├── components/           # Route guards, layouts, Navbar, FormInput, Avatar, Logo,
+│       │                         # CreatePost, PostCard
 │       ├── pages/                # Login, Register, Dashboard, Profile
-│       └── utils/validation.js   # Client-side form validation
+│       └── utils/                # validation (forms + posts), time (relative timestamps)
 └── week5/                        # Per-day snapshots for evaluation (see week5/README.md)
 ```
 
@@ -66,7 +67,7 @@ npm run dev             # http://localhost:5000
 | Variable | Example | Purpose |
 |---|---|---|
 | `PORT` | `5000` | Local server port. Hosting platforms set their own. |
-| `NODE_ENV` | `development` | `production` hides stack traces and switches cookies to `Secure; SameSite=None` |
+| `NODE_ENV` | `development` | Anything other than `development` hides stack traces and 500 error details. `production` also marks the cookie `Secure`. |
 | `MONGO_URI` | `mongodb+srv://user:pass@cluster0.xxxx.mongodb.net/social-feed?...` | Atlas connection string, including the database name |
 | `JWT_SECRET` | 128 random hex chars | Signs tokens. Generate with `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
 | `JWT_EXPIRES_IN` | `7d` | Token lifetime. Keep it in sync with the cookie `maxAge` in `utils/tokenCookie.js`. |
@@ -105,10 +106,16 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 | POST | `/api/auth/logout` | – | Clear the auth cookie |
 | GET | `/api/auth/me` | 🔒 | Current session user |
 | GET | `/api/users/me` | 🔒 | Current user's profile |
+| POST | `/api/posts` | 🔒 | Create a post (`201`) |
+| GET | `/api/posts?page=1&limit=10` | 🔒 | Feed, newest first, paginated |
+| GET | `/api/posts?before=<createdAt>&beforeId=<id>&limit=10` | 🔒 | Feed, cursor mode (used by Load more) |
+| GET | `/api/posts/:id` | 🔒 | Single post |
+| PATCH | `/api/posts/:id` | 🔒 owner | Update `content` and/or `imageUrl` |
+| DELETE | `/api/posts/:id` | 🔒 owner | Delete a post |
 
-**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `404` unknown route · `409` email already registered.
+**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's owner · `404` unknown route or post · `409` email already registered · `429` too many login or sign-up attempts.
 
-**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests, and Register generates a fresh email each run so the collection can be re-run.
+**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** folder creates a second user to prove the `403` cases.
 
 ---
 
@@ -135,7 +142,7 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 
 ### Key decisions and why
 
-**JWT in an httpOnly cookie, not localStorage.** The task asks for auth state to be stored securely. JavaScript can't read an httpOnly cookie, so an XSS bug can't steal the token, and the browser attaches it to requests automatically. The token is never sent in the response body. Cookie flags depend on `NODE_ENV`: `SameSite=Lax` locally, `Secure; SameSite=None` in production.
+**JWT in an httpOnly cookie, not localStorage.** The task asks for auth state to be stored securely. JavaScript can't read an httpOnly cookie, so an XSS bug can't steal the token, and the browser attaches it to requests automatically. The token is never sent in the response body. The cookie is `SameSite=Lax` everywhere (see the security hardening below) and `Secure` in production.
 
 **Password safety, two layers.** The schema uses `select: false`, so queries don't load the password unless they explicitly ask for it (only login does). A `toJSON` transform also strips `password`, `_id`, and `__v` from every response. Passwords are hashed with bcrypt (cost 12) in a `pre("save")` hook, which skips rehashing when the password hasn't changed.
 
@@ -156,6 +163,62 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 **Redirects happen in one place.** After login or logout, the pages only update auth state. `GuestRoute` and `ProtectedRoute` react to the change and redirect.
 
 **`/auth/me` and `/users/me` are separate.** `/auth/me` answers "who is logged in?" for the session check. `/users/me` is the profile resource, which will grow with profile editing and public profiles on later days.
+
+---
+
+## Day 2 — Posts, feed and content management
+
+**Goal:** a logged-in user can create a post → see it in the feed → see other users' posts → edit their own post → delete their own post → load more.
+
+### What was built
+
+**Backend**
+- `Post` model: `author` (reference to `User`, required), `content` (1–500 characters, trimmed), optional `imageUrl`, timestamps. `likesCount` and `commentsCount` start at 0, ready for Day 3.
+- Indexes on `author` (for future profile feeds) and `{ createdAt: -1, _id: -1 }`, which matches the feed's sort exactly.
+- Five endpoints: create, paginated feed, single post, update, delete. All are behind `protect` via `router.use(protect)`.
+- Validation: content must be a non-empty string of at most 500 characters. `imageUrl` must be an `https://` URL. Ids must be valid ObjectIds. `page` must be ≥ 1 and `limit` 1–50.
+- Update and delete are owner-only and return `403` for anyone else, and `404` if the post doesn't exist.
+- The Postman collection has a Posts folder and a Posts - Ownership folder (58 requests, 79 assertions).
+
+**Frontend**
+- The feed lives on the Home page, below a welcome banner and a collapsible "What's on your mind?" composer.
+- `useFeed` hook owns the feed: first page, load more, and add, replace, or remove a post after create, edit, or delete.
+- `CreatePost`: textarea, optional image URL, a character counter that turns amber near the limit and red over it, loading state, and validation. It clears and collapses after posting. Escape or Cancel closes it.
+- `PostCard`: author, relative time with the full date on hover, an "Edited" marker, content, and an optional image with a loading placeholder and broken-link fallback. Your own posts get a "You" badge and a tinted card.
+- Inline edit (Save/Cancel/Escape) and delete with an in-card confirmation (focus starts on Cancel). Both only render on the user's own posts.
+- Load more button with a spinner, and "You're all caught up" at the end. Error states have retry buttons.
+
+### Key decisions and why
+
+**The author always comes from the session.** `createPost` uses `req.user._id` and reads only `content` and `imageUrl` from the body. Sending `author` or `likesCount` has no effect, and there's a Postman test for it.
+
+**Posts reference the author by id, and the API populates only `name avatar`.** Author details live in one place, so a renamed user shows correctly on every post. The feed never exposes an author's email or other private fields.
+
+**Update and delete load the post first, then check ownership.** Order: `404` if missing, then `403` if not the owner. Owner ids are compared with `ObjectId.equals()`, because `===` compares object references and would always fail. Updates use `post.save()`, so schema rules run again and `updatedAt` changes. That's what drives the "Edited" label.
+
+**Pagination: `?page=&limit=` as the task specifies, plus a cursor for Load more.** The feed supports page mode (`page`, `limit`, `total`, `totalPages`, `hasMore`), and the first page loads that way. Page offsets break when posts change between requests, though: a new post makes page 2 repeat a post, and a deleted post makes page 2 skip one (reproduced during the audit). So Load more sends the last post it has (`before=<createdAt>&beforeId=<id>`), and the API returns posts strictly older than it, fetching one extra to compute `hasMore`. The sort and the cursor both use `createdAt` then `_id`, matching the compound index, so the order is stable. The frontend also drops any id already in the list as a safety net.
+
+**Edge cases handled.** A changed image URL resets the card's image state. A `404` on delete (already deleted in another tab) still removes the card. The empty-feed message only shows when there are no posts and no more pages.
+
+**Validation lives in one place per side.** Backend rules are in `postValidators.js`. Frontend rules are in `validatePost()`, shared by the composer and the edit form, with the same 500 limit and the same messages.
+
+---
+
+### Security hardening (end-of-day audit)
+
+A review of the Day 1 and Day 2 code found no critical issues: no NoSQL injection, no mass assignment, no password exposure, and no ownership bypass. These improvements were made:
+
+| Issue | Fix |
+|---|---|
+| Login timing revealed registered emails (~0.13s unknown email vs ~0.45s wrong password) | When the email doesn't exist, bcrypt still compares against a dummy hash, so both cases take the same time |
+| No brute-force protection | `express-rate-limit`: 10 failed logins per IP + email per 15 minutes, and 20 sign-ups per IP per 15 minutes, returning `429` with `Retry-After`. `trust proxy` is set so `req.ip` is the real client behind Vercel. |
+| Cookie was `SameSite=None` in production, which it no longer needs because of the proxy (CSRF surface) | `SameSite=Lax` everywhere, plus `Secure` in production |
+| Missing security headers, and `X-Powered-By: Express` exposed | `helmet` on the API. The frontend's `vercel.json` adds `X-Frame-Options: DENY` (no clickjacking), `nosniff`, and a `Referrer-Policy`. |
+| `http://` image URLs are blocked as mixed content on an https site | Only `https://` image URLs are accepted (API and forms) |
+| An expired session left the UI looking logged in while every action failed | An Axios response interceptor drops the user on any unexpected `401`. The app redirects to login with a "session expired" notice. |
+| A failed logout request caused an unhandled promise rejection | `logout` catches the error and always clears local state |
+| A missing `NODE_ENV` would expose 500 error details | Details are hidden unless `NODE_ENV=development` |
+| JWT verification accepted any algorithm the library allows | Verification is pinned to `HS256` |
 
 ---
 
@@ -197,6 +260,8 @@ Locally, `VITE_API_URL` points straight at `http://localhost:5000/api`. `localho
 ## Known limitations
 
 - **Logout doesn't revoke the JWT.** It clears the cookie, but a copied token stays valid until it expires (7 days). A token blocklist or short-lived access tokens with refresh tokens would fix this.
-- **No rate limiting** on login or register yet (e.g. `express-rate-limit`).
+- **The rate limiter uses in-memory storage.** On Vercel each serverless instance keeps its own counters, so the limit applies per instance. A shared store such as Redis would make it global.
 - **No email verification.** Registration therefore reveals whether an email is already in use.
 - **Profile editing** is planned for a later day. `avatar` and `bio` exist in the schema but can't be changed from the UI yet.
+- **Relative timestamps** ("5 minutes ago") only update on re-render or refresh.
+- **Deleting a post** will also need to delete its likes and comments once those exist (Day 3).

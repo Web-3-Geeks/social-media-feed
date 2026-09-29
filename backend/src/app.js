@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import connectDB from "./config/db.js";
 import cookieParser from "cookie-parser";
 import healthRoutes from "./routes/healthRoutes.js";
@@ -11,6 +12,11 @@ import postRoutes from "./routes/postRoutes.js";
 
 const app = express();
 
+// Vercel sits in front of the app, so trust its X-Forwarded-For header for req.ip
+// (used by the rate limiters).
+app.set("trust proxy", 1);
+
+app.use(helmet());
 app.use(
   cors({
     origin: process.env.CLIENT_URL,
