@@ -1,3 +1,5 @@
+import Comment from "../models/Comment.js";
+import Like from "../models/Like.js";
 import Post from "../models/Post.js";
 import AppError from "../utils/AppError.js";
 
@@ -17,6 +19,21 @@ const assertOwner = (post, user) => {
   }
 };
 
+// Adds likedByMe to each post with ONE query for the whole list (not one per post).
+const withLikedByMe = async (posts, userId) => {
+  const likes = await Like.find({
+    user: userId,
+    post: { $in: posts.map((p) => p._id) },
+  }).select("post");
+
+  const likedIds = new Set(likes.map((like) => String(like.post)));
+
+  return posts.map((post) => ({
+    ...post.toJSON(),
+    likedByMe: likedIds.has(String(post._id)),
+  }));
+};
+
 export const createPost = async (req, res) => {
   const { content, imageUrl } = req.body;
 
@@ -30,7 +47,7 @@ export const createPost = async (req, res) => {
   res.status(201).json({
     success: true,
     message: "Post created",
-    post,
+    post: { ...post.toJSON(), likedByMe: false },
   });
 };
 
@@ -39,17 +56,19 @@ const FEED_SORT = { createdAt: -1, _id: -1 };
 export const getFeed = async (req, res) => {
   const limit = Number(req.query.limit) || 10;
 
-  // Cursor mode ("load more"): posts older than the last one the client has.
-  // Unlike skip/offset, this can't repeat or skip posts when posts are created
-  // or deleted between requests.
-  if (req.query.before) {
-    const before = new Date(req.query.before);
-    const posts = await Post.find({
-      $or: [
+  // Cursor mode (default): the newest posts, or with before/beforeId the posts
+  // older than the last one the client has. Unlike skip/offset, this can't repeat
+  // or skip posts when posts are created or deleted between requests.
+  if (!req.query.page) {
+    const filter = {};
+    if (req.query.before) {
+      const before = new Date(req.query.before);
+      filter.$or = [
         { createdAt: { $lt: before } },
         { createdAt: before, _id: { $lt: req.query.beforeId } },
-      ],
-    })
+      ];
+    }
+    const posts = await Post.find(filter)
       .sort(FEED_SORT)
       .limit(limit + 1)
       .populate("author", AUTHOR_FIELDS);
@@ -59,13 +78,13 @@ export const getFeed = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      posts: posts.slice(0, limit),
+      posts: await withLikedByMe(posts.slice(0, limit), req.user._id),
       pagination: { limit, hasMore },
     });
   }
 
-  // Page mode: ?page=1&limit=10
-  const page = Number(req.query.page) || 1;
+  // Page mode, only when ?page= is sent (e.g. ?page=1&limit=10, as in the task spec).
+  const page = Number(req.query.page);
   const skip = (page - 1) * limit;
 
   const [posts, total] = await Promise.all([
@@ -77,7 +96,7 @@ export const getFeed = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    posts,
+    posts: await withLikedByMe(posts, req.user._id),
     pagination: {
       page,
       limit,
@@ -97,7 +116,8 @@ export const getPost = async (req, res) => {
     throw new AppError("Post not found", 404);
   }
 
-  res.status(200).json({ success: true, post });
+  const [postWithLike] = await withLikedByMe([post], req.user._id);
+  res.status(200).json({ success: true, post: postWithLike });
 };
 
 export const updatePost = async (req, res) => {
@@ -110,11 +130,12 @@ export const updatePost = async (req, res) => {
 
     await post.save();
     await post.populate("author", AUTHOR_FIELDS);
+    const [postWithLike] = await withLikedByMe([post], req.user._id);
 
     res.status(200).json({
         success: true,
         message: "Post updated",
-        post,
+        post: postWithLike,
     });
 };
 
@@ -123,6 +144,11 @@ export const deletePost = async (req, res) => {
   assertOwner(post, req.user);
 
   await post.deleteOne();
+  // Remove the post's likes and comments too, so none are left orphaned.
+  await Promise.all([
+    Like.deleteMany({ post: post._id }),
+    Comment.deleteMany({ post: post._id }),
+  ]);
 
   res.status(200).json({
     success: true,

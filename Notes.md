@@ -91,3 +91,35 @@
 - [x] Lint, build, audit (a11y, edge cases, empty feed)
 - [x] README Day 2 section
 - [x] Commit, `week5/Day2` snapshot, push
+
+---
+
+## Week 5 · Day 3 — Likes, Comments & User Interactions
+
+**Goal:** A logged-in user can View Feed → Like Post → Unlike Post → Add Comment → View Comments → Edit Own Comment → Delete Own Comment.
+
+### Today's plan
+
+**Part 1 — Likes API**
+- [x] Like model (user + post, unique together, timestamps)
+- [x] `POST /api/posts/:id/like` and `DELETE /api/posts/:id/like` → `{ likeCount, likedByMe }`
+- [x] Safe on repeat (liking twice or unliking twice doesn't break counts)
+
+**Part 2 — Comments API**
+- [x] Comment model (post + user + content, max length, timestamps)
+- [x] `POST /api/posts/:id/comments` and `GET /api/posts/:id/comments` (sorted, paginated)
+- [x] `PATCH /api/comments/:id` and `DELETE /api/comments/:id` (owner only, 403/404)
+
+**Part 3 — Feed update**
+- [x] Feed and single post include `likeCount`, `commentCount`, `likedByMe`
+- [x] Deleting a post also deletes its likes and comments
+- [x] Postman collection updated
+
+**Part 4 — Frontend**
+- [x] Like button: optimistic update, revert on failure, no duplicates on fast clicks
+- [x] Comments section per post: list, add, edit/delete own, loading and error states
+
+**Part 5 — Finish up**
+- [x] Full flow test (local + live), lint, build, audit
+- [ ] README Day 3 section, `week5/Day3` snapshot, push
+- [x] Fix Day 2 review points (live URL, per-IP login limit, cursor-only feed)

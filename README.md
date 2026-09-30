@@ -2,8 +2,8 @@
 
 A full-stack social media feed app, built incrementally as a daily internship project (Week 5).
 
-- **Live app:** https://social-media-feed-ruby.vercel.app
-- **Live API:** https://social-feed-api.vercel.app/api/health
+- **Live app (open this):** https://social-media-feed-ruby.vercel.app
+- **Live API health check:** https://social-feed-api.vercel.app/api/health. The API has no pages; its base URL returns a short info object.
 - **Repo:** https://github.com/Web-3-Geeks/social-media-feed
 
 | Layer | Tech |
@@ -28,20 +28,20 @@ social-media-feed/
 │       ├── server.js             # Local entry: connect DB, then app.listen
 │       ├── app.js                # Express app: middleware, routes, error handling
 │       ├── config/db.js          # Cached MongoDB connection
-│       ├── models/               # User, Post
-│       ├── controllers/          # authController, userController, postController
-│       ├── routes/               # healthRoutes, authRoutes, userRoutes, postRoutes
+│       ├── models/               # User, Post, Like, Comment
+│       ├── controllers/          # auth, user, post, like, comment
+│       ├── routes/               # health, auth, user, post (incl. likes and comments), comment
 │       ├── middleware/           # auth (protect), validate, rateLimiters, notFound, errorHandler
-│       ├── validators/           # express-validator rules (auth, posts)
+│       ├── validators/           # express-validator rules (auth, posts, comments)
 │       └── utils/                # AppError, generateToken, tokenCookie
 ├── frontend/
 │   ├── vercel.json               # SPA fallback + /api proxy to the backend
 │   └── src/
 │       ├── api/axios.js          # Axios instance (baseURL, withCredentials)
 │       ├── context/              # AuthContext + AuthProvider
-│       ├── hooks/                # useAuth, useFeed (feed state + pagination)
+│       ├── hooks/                # useAuth, useFeed (feed state + pagination), useLike (optimistic likes)
 │       ├── components/           # Route guards, layouts, Navbar, FormInput, Avatar, Logo,
-│       │                         # CreatePost, PostCard
+│       │                         # CreatePost, PostCard, LikeButton, CommentsSection, CommentItem, Icons
 │       ├── pages/                # Login, Register, Dashboard, Profile
 │       └── utils/                # validation (forms + posts), time (relative timestamps)
 └── week5/                        # Per-day snapshots for evaluation (see week5/README.md)
@@ -107,15 +107,22 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 | GET | `/api/auth/me` | 🔒 | Current session user |
 | GET | `/api/users/me` | 🔒 | Current user's profile |
 | POST | `/api/posts` | 🔒 | Create a post (`201`) |
-| GET | `/api/posts?page=1&limit=10` | 🔒 | Feed, newest first, paginated |
-| GET | `/api/posts?before=<createdAt>&beforeId=<id>&limit=10` | 🔒 | Feed, cursor mode (used by Load more) |
+| GET | `/api/posts?limit=10` | 🔒 | Feed, newest first (cursor mode, the default) |
+| GET | `/api/posts?before=<createdAt>&beforeId=<id>&limit=10` | 🔒 | Next page of the feed (Load more) |
+| GET | `/api/posts?page=1&limit=10` | 🔒 | Feed in page mode, as in the task spec |
 | GET | `/api/posts/:id` | 🔒 | Single post |
 | PATCH | `/api/posts/:id` | 🔒 owner | Update `content` and/or `imageUrl` |
-| DELETE | `/api/posts/:id` | 🔒 owner | Delete a post |
+| DELETE | `/api/posts/:id` | 🔒 owner | Delete a post (and its likes and comments) |
+| POST | `/api/posts/:id/like` | 🔒 | Like a post → `{ likeCount, likedByMe }` |
+| DELETE | `/api/posts/:id/like` | 🔒 | Unlike a post → `{ likeCount, likedByMe }` |
+| POST | `/api/posts/:id/comments` | 🔒 | Add a comment (`201`) |
+| GET | `/api/posts/:id/comments?limit=20` | 🔒 | Comments, newest first (`before` + `beforeId` for older ones) |
+| PATCH | `/api/comments/:id` | 🔒 owner | Edit a comment |
+| DELETE | `/api/comments/:id` | 🔒 owner | Delete a comment |
 
-**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's owner · `404` unknown route or post · `409` email already registered · `429` too many login or sign-up attempts.
+**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's or comment's owner · `404` unknown route, post, or comment · `409` email already registered · `429` too many login or sign-up attempts.
 
-**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** folder creates a second user to prove the `403` cases.
+**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** and **Comments - Ownership** folders use a second user to prove the `403` cases (109 requests, 130 assertions).
 
 ---
 
@@ -196,11 +203,49 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 
 **Update and delete load the post first, then check ownership.** Order: `404` if missing, then `403` if not the owner. Owner ids are compared with `ObjectId.equals()`, because `===` compares object references and would always fail. Updates use `post.save()`, so schema rules run again and `updatedAt` changes. That's what drives the "Edited" label.
 
-**Pagination: `?page=&limit=` as the task specifies, plus a cursor for Load more.** The feed supports page mode (`page`, `limit`, `total`, `totalPages`, `hasMore`), and the first page loads that way. Page offsets break when posts change between requests, though: a new post makes page 2 repeat a post, and a deleted post makes page 2 skip one (reproduced during the audit). So Load more sends the last post it has (`before=<createdAt>&beforeId=<id>`), and the API returns posts strictly older than it, fetching one extra to compute `hasMore`. The sort and the cursor both use `createdAt` then `_id`, matching the compound index, so the order is stable. The frontend also drops any id already in the list as a safety net.
+**Pagination: cursor by default, with `?page=&limit=` still supported as the task specifies.** Without `page`, the feed returns the newest posts and `{ limit, hasMore }`. With `?page=`, it returns `page`, `limit`, `total`, `totalPages`, and `hasMore`. Page offsets break when posts change between requests, though: a new post makes page 2 repeat a post, and a deleted post makes page 2 skip one (reproduced during the audit). So Load more sends the last post it has (`before=<createdAt>&beforeId=<id>`), and the API returns posts strictly older than it, fetching one extra to compute `hasMore`. The sort and the cursor both use `createdAt` then `_id`, matching the compound index, so the order is stable. The frontend also drops any id already in the list as a safety net.
 
 **Edge cases handled.** A changed image URL resets the card's image state. A `404` on delete (already deleted in another tab) still removes the card. The empty-feed message only shows when there are no posts and no more pages.
 
 **Validation lives in one place per side.** Backend rules are in `postValidators.js`. Frontend rules are in `validatePost()`, shared by the composer and the edit form, with the same 500 limit and the same messages.
+
+---
+
+## Day 3 — Likes, comments and user interactions
+
+**Goal:** a logged-in user can view the feed → like a post → unlike it → add a comment → view comments → edit their own comment → delete their own comment.
+
+### What was built
+
+**Backend**
+- `Like` model (`user`, `post`, `createdAt`) with a **unique index on `{ post, user }`**, so one user can only have one like per post.
+- `Comment` model (`post`, `author`, `content` of 1–300 characters, timestamps), indexed by `{ post, createdAt, _id }` for listing and by `author` for future profile pages.
+- Like and unlike return `{ likeCount, likedByMe }`. Comments support create, list (newest first, cursor-paginated, an empty list when there are none), and owner-only edit and delete (`403` otherwise, `404` if missing).
+- The feed and single-post responses include `likeCount`, `commentCount`, and `likedByMe`.
+- Deleting a post also deletes its likes and comments.
+
+**Frontend**
+- **Like button:** heart icon and count, optimistic update, a busy state while a request is in flight, and an automatic revert with a message if the request fails.
+- **Comments:** a "💬 N comments" toggle on each post loads comments only when opened. It includes a composer with a 300-character counter, a newest-first list with author, relative time and an "Edited" label, inline edit, and delete with a confirmation step. Edit and Delete appear only on your own comments. There's also "View more comments", loading and error states, and a "Hide comments" button. Escape closes the section and returns focus to the toggle, and an unsent comment draft is kept if the section is closed.
+
+### Key decisions and why
+
+**Counters live on the post and change atomically.** The feed shows like and comment counts for every post, so `likeCount` and `commentCount` are stored on the post. Counting likes per post on each request would be slow. They change with `$inc` (atomic), so parallel likes from different users are never lost.
+
+**Likes are race-safe.** Like uses one atomic `updateOne(..., { upsert: true })` with `$setOnInsert`, and the count only increases if a like was actually inserted (`upsertedCount === 1`). If two requests still race, the unique index rejects the second one (error `11000`), and it's treated as "already liked". Unlike only decrements when `deletedCount === 1`. Liking twice or unliking twice is safe. Verified with 10 parallel like requests: exactly 1 like.
+
+**`likedByMe` is one query per page, not one per post.** `withLikedByMe()` fetches the current user's likes for all posts on the page with a single `$in` query (this avoids the N+1 query problem), then marks each post.
+
+**Optimistic likes that survive rapid clicking.** `useLike` updates the UI instantly, but sends only one request at a time. Clicks while a request is in flight only change the *desired* state. When the request finishes, another is sent only if the desired state differs from what the server confirmed. The count shown is always "last confirmed count ± 1", so it can't drift, and on failure the UI returns to the last confirmed state. Tested with 7 rapid clicks: the server ends with exactly 1 like.
+
+**Comments are loaded on demand and shown newest first.** Opening a post's comments triggers the fetch, so the feed doesn't make an extra request per post. New comments appear at the top, and "View more comments" loads older ones with a `before` cursor, the same stable `createdAt` + `_id` approach as the feed.
+
+**Comment count stays in sync.** Creating or deleting a comment changes `commentCount` on the server. The UI updates it through `patchPost(id, fn)`, a functional update in `useFeed`, so quick successive changes are never based on a stale value. The decrement only runs while the count is above 0.
+
+### Day 2 review follow-ups (done today)
+- **The live URL returned 404:** the reviewer opened the API's base URL, which has no page. The frontend was working. The API base URL (`/` and `/api`) now returns a short info object pointing to the app and the health check, and the top of this README says which link to open.
+- **Credential stuffing:** a second login limit **per IP only** (30 failed attempts per 15 minutes) was added alongside the per-IP-and-email limit, so one IP can't try unlimited different accounts.
+- **Simpler pagination:** the feed now uses the cursor for every request (the first page has no `before`), and `?page=` stays available for the task spec.
 
 ---
 
@@ -211,7 +256,7 @@ A review of the Day 1 and Day 2 code found no critical issues: no NoSQL injectio
 | Issue | Fix |
 |---|---|
 | Login timing revealed registered emails (~0.13s unknown email vs ~0.45s wrong password) | When the email doesn't exist, bcrypt still compares against a dummy hash, so both cases take the same time |
-| No brute-force protection | `express-rate-limit`: 10 failed logins per IP + email per 15 minutes, and 20 sign-ups per IP per 15 minutes, returning `429` with `Retry-After`. `trust proxy` is set so `req.ip` is the real client behind Vercel. |
+| No brute-force protection | `express-rate-limit`: 10 failed logins per IP + email and 30 per IP (added in Day 3 after review) per 15 minutes, and 20 sign-ups per IP per 15 minutes, returning `429` with `Retry-After`. `trust proxy` is set so `req.ip` is the real client behind Vercel. |
 | Cookie was `SameSite=None` in production, which it no longer needs because of the proxy (CSRF surface) | `SameSite=Lax` everywhere, plus `Secure` in production |
 | Missing security headers, and `X-Powered-By: Express` exposed | `helmet` on the API. The frontend's `vercel.json` adds `X-Frame-Options: DENY` (no clickjacking), `nosniff`, and a `Referrer-Policy`. |
 | `http://` image URLs are blocked as mixed content on an https site | Only `https://` image URLs are accepted (API and forms) |
@@ -264,4 +309,4 @@ Locally, `VITE_API_URL` points straight at `http://localhost:5000/api`. `localho
 - **No email verification.** Registration therefore reveals whether an email is already in use.
 - **Profile editing** is planned for a later day. `avatar` and `bio` exist in the schema but can't be changed from the UI yet.
 - **Relative timestamps** ("5 minutes ago") only update on re-render or refresh.
-- **Deleting a post** will also need to delete its likes and comments once those exist (Day 3).
+- **Relationships are cleaned up only for post deletion.** Deleting a user account (not implemented yet) would also need to remove that user's posts, likes, and comments.

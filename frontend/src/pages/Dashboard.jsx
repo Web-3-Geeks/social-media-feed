@@ -19,6 +19,7 @@ export default function Dashboard() {
     addPost,
     replacePost,
     removePost,
+    patchPost,
   } = useFeed();
   const firstName = user.name.split(" ")[0];
 
@@ -95,6 +96,7 @@ export default function Dashboard() {
                 isOwn={post.author.id === user.id}
                 onUpdated={replacePost}
                 onDeleted={removePost}
+                onPatch={patchPost}
               />
             ))}
 

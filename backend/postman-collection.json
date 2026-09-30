@@ -43,6 +43,33 @@
             "description": "Checks that the server is running and connected to MongoDB.\n\n- **200**: `status: \"ok\"`, `database: \"connected\"`\n- **503**: `status: \"degraded\"`, the server is up but the database is disconnected\n\nAlso returns `uptime` (seconds) and `timestamp`. Public, no auth needed. On the live Vercel URL the first request after idle time can take a few seconds (cold start)."
           },
           "response": []
+        },
+        {
+          "name": "API Info (Base URL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Points to the health check\", () => pm.expect(pm.response.json().health).to.eql(\"/api/health\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}",
+              "host": [
+                "{{baseUrl}}"
+              ]
+            },
+            "description": "Visiting the API's base URL returns a short info object (name, app URL, health path) instead of a 404."
+          },
+          "response": []
         }
       ],
       "description": "Service status endpoint, used for monitoring and debugging."
@@ -602,7 +629,7 @@
                 }
               }
             },
-            "description": "🔒 Creates a post for the logged-in user.\n\n**Body**\n| Field | Rules |\n|---|---|\n| `content` | Required, text, trimmed, 1–500 characters |\n| `imageUrl` | Optional, must be an `https://` URL. Empty or missing means no image. |\n\nThe author always comes from the session, never from the body. Extra fields like `author` or `likesCount` are ignored.\n\n**Responses**\n- **201**: `Post created` plus the post, with `author: { id, name, avatar }`\n- **400**: validation errors\n- **401**: not logged in\n\nSaves the new post's id in `postId` for later requests."
+            "description": "🔒 Creates a post for the logged-in user.\n\n**Body**\n| Field | Rules |\n|---|---|\n| `content` | Required, text, trimmed, 1–500 characters |\n| `imageUrl` | Optional, must be an `https://` URL. Empty or missing means no image. |\n\nThe author always comes from the session, never from the body. Extra fields like `author` or `likeCount` are ignored.\n\n**Responses**\n- **201**: `Post created` plus the post, with `author: { id, name, avatar }`\n- **400**: validation errors\n- **401**: not logged in\n\nSaves the new post's id in `postId` for later requests."
           },
           "response": []
         },
@@ -660,7 +687,7 @@
                 "exec": [
                   "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
                   "const post = pm.response.json().post;",
-                  "pm.test(\"likesCount can't be set by the client\", () => pm.expect(post.likesCount).to.eql(0));",
+                  "pm.test(\"likeCount can't be set by the client\", () => pm.expect(post.likeCount).to.eql(0));",
                   "pm.test(\"Author is the logged-in user, not the one in the body\", () => {",
                   "  pm.expect(post.author.id).to.not.eql(\"000000000000000000000000\");",
                   "});"
@@ -687,14 +714,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"Trying to fake fields\",\n  \"author\": \"000000000000000000000000\",\n  \"likesCount\": 999\n}",
+              "raw": "{\n  \"content\": \"Trying to fake fields\",\n  \"author\": \"000000000000000000000000\",\n  \"likeCount\": 999\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "🔒 Security check. Sends a fake `author` and `likesCount`. Only `content` and `imageUrl` are read from the body, so the post belongs to the logged-in user and `likesCount` stays `0`."
+            "description": "🔒 Security check. Sends a fake `author` and `likeCount`. Only `content` and `imageUrl` are read from the body, so the post belongs to the logged-in user and `likeCount` stays `0`."
           },
           "response": []
         },
@@ -857,9 +884,11 @@
                   "pm.test(\"Authors expose only id, name, avatar\", () => {",
                   "  posts.forEach((p) => pm.expect(p.author).to.have.all.keys(\"id\", \"name\", \"avatar\"));",
                   "});",
-                  "pm.test(\"Has pagination info\", () => {",
-                  "  pm.expect(pagination).to.include.all.keys(\"page\", \"limit\", \"total\", \"totalPages\", \"hasMore\");",
-                  "  pm.expect(pagination.page).to.eql(1);",
+                  "pm.test(\"Posts include engagement fields\", () => {",
+                  "  posts.forEach((p) => pm.expect(p).to.include.all.keys(\"likeCount\", \"commentCount\", \"likedByMe\"));",
+                  "});",
+                  "pm.test(\"Cursor pagination info by default\", () => {",
+                  "  pm.expect(pagination).to.have.all.keys(\"limit\", \"hasMore\");",
                   "  pm.expect(pagination.limit).to.eql(10);",
                   "});"
                 ]
@@ -878,7 +907,51 @@
                 "posts"
               ]
             },
-            "description": "🔒 The social feed: all posts, newest first. Defaults to `page=1`, `limit=10`.\n\nEach post includes `author: { id, name, avatar }` only, with no email or other private fields.\n\n**Response (200)**\n```json\n{\n  \"success\": true,\n  \"posts\": [ ... ],\n  \"pagination\": { \"page\": 1, \"limit\": 10, \"total\": 42, \"totalPages\": 5, \"hasMore\": true }\n}\n```\nThe frontend uses `hasMore` to decide whether to show \"Load more\"."
+            "description": "🔒 The social feed, newest first: the latest 10 posts by default (cursor mode).\n\nEach post includes `author: { id, name, avatar }`, `likeCount`, `commentCount`, and `likedByMe`.\n\n**Response (200)**: `{ posts, pagination: { limit, hasMore } }`. For the next page, send the last post's `createdAt` and `id` as `before` and `beforeId` (see Load More). Page mode (`?page=`) is also supported."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Feed - Page Mode",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const { pagination } = pm.response.json();",
+                  "pm.test(\"Page pagination info\", () => {",
+                  "  pm.expect(pagination).to.include.all.keys(\"page\", \"limit\", \"total\", \"totalPages\", \"hasMore\");",
+                  "  pm.expect(pagination.page).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "🔒 Page mode, as in the task spec (`?page=1&limit=10`). Returns `page`, `limit`, `total`, `totalPages`, and `hasMore`."
           },
           "response": []
         },
@@ -1689,6 +1762,1141 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Likes",
+      "description": "Like and unlike posts. 🔒 Logged-in users only. Both endpoints return `{ likeCount, likedByMe }` and are idempotent: liking twice or unliking twice never changes the count twice.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Log in before each request so the folder works on its own.",
+              "pm.sendRequest({",
+              "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+              "  method: \"POST\",",
+              "  header: { \"Content-Type\": \"application/json\" },",
+              "  body: { mode: \"raw\", raw: JSON.stringify({",
+              "    email: pm.collectionVariables.get(\"testEmail\") || \"test@example.com\",",
+              "    password: \"password123\"",
+              "  }) }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Create Post To Like",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const post = pm.response.json().post;",
+                  "pm.test(\"New post starts with zero counts and likedByMe false\", () => {",
+                  "  pm.expect(post.likeCount).to.eql(0);",
+                  "  pm.expect(post.commentCount).to.eql(0);",
+                  "  pm.expect(post.likedByMe).to.eql(false);",
+                  "});",
+                  "pm.collectionVariables.set(\"engagePostId\", post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"A post for the likes and comments tests\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a fresh post and saves its id in `engagePostId` for the Likes and Comments folders."
+          },
+          "response": []
+        },
+        {
+          "name": "Like Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Liked, count is 1\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.likeCount).to.eql(1);",
+                  "  pm.expect(body.likedByMe).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "like"
+              ]
+            },
+            "description": "🔒 Likes the post.\n\n**Response (200)**\n```json\n{ \"success\": true, \"likeCount\": 1, \"likedByMe\": true }\n```\n\nA unique index on `{ post, user }` plus an atomic upsert means one user can only ever have one like per post, even with parallel requests. The count only increases when a new like is actually created."
+          },
+          "response": []
+        },
+        {
+          "name": "Like Post - Again (Idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Count did not increase\", () => pm.expect(pm.response.json().likeCount).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "like"
+              ]
+            },
+            "description": "🔒 Liking an already-liked post is handled safely: `200`, and the count stays the same."
+          },
+          "response": []
+        },
+        {
+          "name": "Feed Shows likedByMe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const post = pm.response.json().post;",
+                  "pm.test(\"likedByMe is true for the user who liked it\", () => {",
+                  "  pm.expect(post.likedByMe).to.eql(true);",
+                  "  pm.expect(post.likeCount).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}"
+              ]
+            },
+            "description": "🔒 Posts in the feed and single-post responses include `likeCount`, `commentCount`, and `likedByMe` for the current user."
+          },
+          "response": []
+        },
+        {
+          "name": "Unlike Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Unliked, count back to 0\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.likeCount).to.eql(0);",
+                  "  pm.expect(body.likedByMe).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "like"
+              ]
+            },
+            "description": "🔒 Removes the current user's like.\n\n**Response (200)**: `{ likeCount: 0, likedByMe: false }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Unlike Post - Again (Idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Count stays at 0\", () => pm.expect(pm.response.json().likeCount).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "like"
+              ]
+            },
+            "description": "🔒 Unliking a post you haven't liked is safe: the count never goes below 0."
+          },
+          "response": []
+        },
+        {
+          "name": "Like Post - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/000000000000000000000000/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "000000000000000000000000",
+                "like"
+              ]
+            },
+            "description": "🔒 **Expected (404)**: `Post not found`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Comments",
+      "description": "Create, list, edit, and delete comments. 🔒 Logged-in users only. Comments are sorted newest first, with cursor pagination (`before` + `beforeId` = the last comment shown). Edit and delete are owner-only (`403` otherwise).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Log in before each request so the folder works on its own.",
+              "pm.sendRequest({",
+              "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+              "  method: \"POST\",",
+              "  header: { \"Content-Type\": \"application/json\" },",
+              "  body: { mode: \"raw\", raw: JSON.stringify({",
+              "    email: pm.collectionVariables.get(\"testEmail\") || \"test@example.com\",",
+              "    password: \"password123\"",
+              "  }) }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Get Comments - Empty",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Empty list\", () => pm.expect(pm.response.json().comments).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "description": "🔒 A post with no comments returns an empty list."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Comment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const comment = pm.response.json().comment;",
+                  "pm.test(\"Trimmed content and basic author info only\", () => {",
+                  "  pm.expect(comment.content).to.eql(\"Great post!\");",
+                  "  pm.expect(comment.author).to.have.all.keys(\"id\", \"name\", \"avatar\");",
+                  "});",
+                  "pm.collectionVariables.set(\"commentId\", comment.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"  Great post!  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Adds a comment as the logged-in user.\n\n**Body**: `content`, required, trimmed, 1–300 characters.\n\n**Response (201)**: `Comment added` plus the comment with `author: { id, name, avatar }`. The post's `commentCount` goes up by 1.\n\nSaves the id in `commentId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Comment - Second",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Second comment\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 A second comment, used to check the sort order and pagination."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Comment - Empty",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Empty comment rejected\", () => pm.expect(pm.response.json().errors.content).to.eql(\"Comment cannot be empty\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 **Expected (400)**: `Comment cannot be empty`"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Comment - Too Long",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"longComment\", \"a\".repeat(301));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Too long rejected\", () => pm.expect(pm.response.json().errors.content).to.eql(\"Comment cannot exceed 300 characters\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"{{longComment}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 301 characters. **Expected (400)**: `Comment cannot exceed 300 characters`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Comments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const { comments } = pm.response.json();",
+                  "pm.test(\"Newest first\", () => {",
+                  "  pm.expect(comments[0].content).to.eql(\"Second comment\");",
+                  "  pm.expect(comments[1].content).to.eql(\"Great post!\");",
+                  "});",
+                  "pm.test(\"Has the required fields\", () => {",
+                  "  pm.expect(comments[0]).to.include.all.keys(\"id\", \"content\", \"author\", \"createdAt\", \"updatedAt\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "description": "🔒 Returns the post's comments, newest first. Each comment has `id`, `content`, `author { id, name, avatar }`, `createdAt`, and `updatedAt`.\n\n**Query**: `limit` (1–50, default 20), and `before` + `beforeId` (the last, oldest comment you have) for older comments.\n\n**Response (200)**: `{ comments, pagination: { limit, hasMore } }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Comments - Paginated",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const { comments, pagination } = pm.response.json();",
+                  "pm.test(\"One comment and more available\", () => {",
+                  "  pm.expect(comments.length).to.eql(1);",
+                  "  pm.expect(pagination.hasMore).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "🔒 `limit=1` returns the newest comment and `hasMore: true`."
+          },
+          "response": []
+        },
+        {
+          "name": "Post Shows commentCount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"commentCount is 2\", () => pm.expect(pm.response.json().post.commentCount).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}"
+              ]
+            },
+            "description": "🔒 The post's `commentCount` reflects the 2 comments."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Comment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const comment = pm.response.json().comment;",
+                  "pm.test(\"Content updated and updatedAt moved\", () => {",
+                  "  pm.expect(comment.content).to.eql(\"Great post! (edited)\");",
+                  "  pm.expect(new Date(comment.updatedAt) > new Date(comment.createdAt)).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/comments/{{commentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "comments",
+                "{{commentId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Great post! (edited)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 **Owner only.** Updates the comment's content (same rules as create).\n\n**Responses**: **200** updated comment · **400** validation · **403** not the owner · **404** not found"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Comment - Empty",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/comments/{{commentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "comments",
+                "{{commentId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \" \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 **Expected (400)**: `Comment cannot be empty`"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Comment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns the deleted id\", () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"commentId\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/comments/{{commentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "comments",
+                "{{commentId}}"
+              ]
+            },
+            "description": "🔒 **Owner only.** Deletes the comment and decrements the post's `commentCount`.\n\n**Response (200)**: `{ success: true, message: \"Comment deleted\", id }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Comment - Already Deleted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Says not found\", () => pm.expect(pm.response.json().message).to.eql(\"Comment not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/comments/{{commentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "comments",
+                "{{commentId}}"
+              ]
+            },
+            "description": "🔒 **Expected (404)**: `Comment not found`"
+          },
+          "response": []
+        },
+        {
+          "name": "Post commentCount After Delete",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"commentCount is 1\", () => pm.expect(pm.response.json().post.commentCount).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}"
+              ]
+            },
+            "description": "🔒 `commentCount` drops back to 1 after the delete."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Comments - Ownership",
+      "description": "Proves users can't edit or delete other users' comments. Runs in order: the second user (from **Posts - Ownership**) comments, then the main user tries to edit and delete that comment and gets **403**.",
+      "item": [
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"otherEmail\")) { pm.collectionVariables.set(\"otherEmail\", \"ui1790636430787@example.com\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Logs in as the second user created by **Posts - Ownership**."
+          },
+          "response": []
+        },
+        {
+          "name": "Comment as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"otherCommentId\", pm.response.json().comment.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Comment owned by another user\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Saves the id in `otherCommentId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches back to the main user."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Other User's Comment - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Explains why\", () => pm.expect(pm.response.json().message).to.eql(\"You can only modify your own comments\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/comments/{{otherCommentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "comments",
+                "{{otherCommentId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Trying to edit someone else's comment\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 **Expected (403)**: `You can only modify your own comments`"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Other User's Comment - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/comments/{{otherCommentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "comments",
+                "{{otherCommentId}}"
+              ]
+            },
+            "description": "🔒 **Expected (403)**: `You can only modify your own comments`"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Post Removes Its Likes and Comments",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Like the post first, so there is a like and comments to cascade.",
+                  "pm.sendRequest({ url: pm.collectionVariables.get(\"baseUrl\") + \"/posts/\" + pm.collectionVariables.get(\"engagePostId\") + \"/like\", method: \"POST\" });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}"
+              ]
+            },
+            "description": "🔒 Deleting a post also deletes its likes and comments (no orphaned records)."
+          },
+          "response": []
+        },
+        {
+          "name": "Comments of Deleted Post - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{engagePostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{engagePostId}}",
+                "comments"
+              ]
+            },
+            "description": "🔒 The post is gone, so its comments endpoint returns **404**."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -1727,6 +2935,24 @@
       "value": "",
       "type": "string",
       "description": "Set by Posts - Ownership → Create Post as Other User."
+    },
+    {
+      "key": "engagePostId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Likes → Create Post To Like."
+    },
+    {
+      "key": "commentId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Comments → Create Comment."
+    },
+    {
+      "key": "otherCommentId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Comments - Ownership → Comment as Other User."
     }
   ]
 }

@@ -63,3 +63,12 @@ export function validatePost({ content, imageUrl }) {
   return errors;
 }
 
+export const COMMENT_MAX_LENGTH = 300;
+
+export function validateComment(content) {
+  if (!content.trim()) return "Comment cannot be empty";
+  if (content.trim().length > COMMENT_MAX_LENGTH) {
+    return `Comment cannot exceed ${COMMENT_MAX_LENGTH} characters`;
+  }
+  return "";
+}

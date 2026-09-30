@@ -16,7 +16,7 @@ export function useFeed() {
     let ignore = false;
 
     api
-      .get("/posts", { params: { page: 1, limit: PAGE_SIZE } })
+      .get("/posts", { params: { limit: PAGE_SIZE } })
       .then((res) => {
         if (ignore) return;
         setPosts(res.data.posts);
@@ -50,7 +50,7 @@ export function useFeed() {
       const last = posts[posts.length - 1];
       const params = last
         ? { before: last.createdAt, beforeId: last.id, limit: PAGE_SIZE }
-        : { page: 1, limit: PAGE_SIZE };
+        : { limit: PAGE_SIZE };
       const res = await api.get("/posts", { params });
       // Safety net: never add a post that's already in the list.
       setPosts((prev) => {
@@ -77,6 +77,18 @@ export function useFeed() {
     setPosts((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
+  // Merge a few fields into one post (e.g. likeCount/likedByMe, commentCount)
+  // without replacing the whole object. `changes` can be an object or a function
+  // of the current post, so updates based on the latest value never get lost.
+  const patchPost = useCallback((id, changes) => {
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        return { ...p, ...(typeof changes === "function" ? changes(p) : changes) };
+      })
+    );
+  }, []);
+
   return {
     posts,
     hasMore,
@@ -89,5 +101,6 @@ export function useFeed() {
     addPost,
     replacePost,
     removePost,
+    patchPost,
   };
 }

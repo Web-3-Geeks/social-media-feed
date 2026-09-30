@@ -9,6 +9,7 @@ import errorHandler from "./middleware/errorHandler.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import postRoutes from "./routes/postRoutes.js";
+import commentRoutes from "./routes/commentRoutes.js";
 
 const app = express();
 
@@ -30,10 +31,22 @@ app.use(async (req, res, next) => {
   await connectDB();
   next();
 });
+// The API has no pages. Visiting its base URL explains where things are instead of a 404.
+const apiInfo = (req, res) => {
+  res.status(200).json({
+    name: "Social Feed API",
+    app: process.env.CLIENT_URL,
+    health: "/api/health",
+    docs: "See README.md and backend/postman-collection.json in the repo",
+  });
+};
+app.get("/", apiInfo);
+app.get("/api", apiInfo);
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
+app.use("/api/comments", commentRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

@@ -19,6 +19,17 @@ export const loginLimiter = rateLimit({
   handler: tooManyRequests("Too many failed login attempts. Please try again in 15 minutes."),
 });
 
+// Failed logins per IP across all emails: stops credential stuffing (one IP trying
+// many different accounts), which the per-account limit above can't catch.
+export const loginIpLimiter = rateLimit({
+  windowMs: FIFTEEN_MINUTES,
+  limit: 30,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  handler: tooManyRequests("Too many failed login attempts from this network. Please try again in 15 minutes."),
+});
+
 // Only successful sign-ups count: limits how many accounts one IP can create.
 export const registerLimiter = rateLimit({
   windowMs: FIFTEEN_MINUTES,

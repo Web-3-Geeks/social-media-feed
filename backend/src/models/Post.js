@@ -19,13 +19,15 @@ const postSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
-    likesCount: {
+    likeCount: {
       type: Number,
       default: 0,
+      min: 0
     },
-    commentsCount: {
+    commentCount: {
       type: Number,
       default: 0,
+      min: 0
     },
   },
   { timestamps: true },

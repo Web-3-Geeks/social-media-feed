@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { fullDateTime, timeAgo } from "../utils/time";
 import Avatar from "./Avatar";
+import CommentsSection from "./CommentsSection";
+import { CommentIcon } from "./Icons";
+import LikeButton from "./LikeButton";
 import api, { getErrorMessage } from "../api/axios";
 import { POST_MAX_LENGTH, validatePost } from "../utils/validation";
 
-export default function PostCard({ post, isOwn, onUpdated, onDeleted }) {
+export default function PostCard({ post, isOwn, onUpdated, onDeleted, onPatch }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -15,6 +18,14 @@ export default function PostCard({ post, isOwn, onUpdated, onDeleted }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [showComments, setShowComments] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const commentsToggleRef = useRef(null);
+
+  const closeComments = () => {
+    setShowComments(false);
+    commentsToggleRef.current?.focus();
+  };
   const wasEdited = post.updatedAt !== post.createdAt;
 
   const startEditing = () => {
@@ -271,6 +282,40 @@ export default function PostCard({ post, isOwn, onUpdated, onDeleted }) {
             />
           )}
         </>
+      )}
+
+      <footer className="mt-3 flex items-center gap-1 border-t border-gray-100 pt-2">
+        <LikeButton post={post} onChange={(changes) => onPatch(post.id, changes)} />
+        <button
+          type="button"
+          ref={commentsToggleRef}
+          onClick={() => setShowComments((open) => !open)}
+          aria-expanded={showComments}
+          aria-controls={`comments-${post.id}`}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+            showComments ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+          }`}
+        >
+          <CommentIcon />
+          <span className="tabular-nums">{post.commentCount}</span>
+          <span className="hidden sm:inline">{post.commentCount === 1 ? "comment" : "comments"}</span>
+        </button>
+      </footer>
+
+      {showComments && (
+        <div id={`comments-${post.id}`}>
+          <CommentsSection
+            postId={post.id}
+            draft={commentDraft}
+            onDraftChange={setCommentDraft}
+            onClose={closeComments}
+            onCountChange={(delta) =>
+              onPatch(post.id, (current) => ({
+                commentCount: Math.max(0, current.commentCount + delta),
+              }))
+            }
+          />
+        </div>
       )}
     </article>
   );
