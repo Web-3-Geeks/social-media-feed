@@ -8,5 +8,6 @@ To run a snapshot, follow the root README inside that folder (`npm install` in `
 |---|---|---|
 | [Day1](Day1/) | Project setup, database design, authentication | Express 5 + MongoDB Atlas API; register, login, logout, `/auth/me`, `/users/me`; JWT in an httpOnly cookie; React auth flow with protected routes; Dashboard and Profile pages; Vercel deployment |
 | [Day2](Day2/) | Posts, feed and content management | Post model linked to User; create, feed, single, owner-only edit/delete API; feed on Home with composer, post cards, inline edit, delete confirmation, Load more (cursor); security hardening (rate limiting, helmet, timing-safe login, SameSite=Lax, session-expiry handling) |
+| [Day3](Day3/) | Likes, comments and user interactions | Like model (unique user+post) with race-safe like/unlike; Comment model with create, list (newest first, cursor), owner-only edit/delete; feed includes likeCount, commentCount, likedByMe; optimistic like button; on-demand comments UI; Day 2 review fixes (API base URL info, per-IP login limit, cursor-first feed) |
 
 `archive/` is reserved for deprecated or old files.
