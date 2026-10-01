@@ -23,3 +23,23 @@ export function CommentIcon({ size = 18 }) {
     </svg>
   );
 }
+
+export function GridIcon({ size = 18 }) {
+  return (
+    <svg {...base} width={size} height={size}>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+export function ListIcon({ size = 18 }) {
+  return (
+    <svg {...base} width={size} height={size}>
+      <rect x="3" y="3" width="18" height="7" rx="1" />
+      <rect x="3" y="14" width="18" height="7" rx="1" />
+    </svg>
+  );
+}

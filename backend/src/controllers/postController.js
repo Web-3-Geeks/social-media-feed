@@ -145,6 +145,38 @@ export const getFollowingFeed = async (req, res) => {
   });
 };
 
+// One user's posts for their profile page, newest first, with the same cursor
+// pagination as the feeds.
+export const getUserPosts = async (req, res) => {
+  const userId = req.params.id;
+  if (!(await User.exists({ _id: userId }))) {
+    throw new AppError("User not found", 404);
+  }
+
+  const limit = Number(req.query.limit) || 10;
+  const filter = { author: userId };
+  if (req.query.before) {
+    const before = new Date(req.query.before);
+    filter.$or = [
+      { createdAt: { $lt: before } },
+      { createdAt: before, _id: { $lt: req.query.beforeId } },
+    ];
+  }
+
+  const posts = await Post.find(filter)
+    .sort(FEED_SORT)
+    .limit(limit + 1)
+    .populate("author", AUTHOR_FIELDS);
+
+  const hasMore = posts.length > limit;
+
+  res.status(200).json({
+    success: true,
+    posts: await withLikedByMe(posts.slice(0, limit), req.user._id),
+    pagination: { limit, hasMore },
+  });
+};
+
 export const getPost = async (req, res) => {
   const post = await Post.findById(req.params.id).populate(
     "author",

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "1a66b5b1-8740-46fa-b6d0-3d23a0f525b0",
     "name": "Social Media Feed App",
-    "description": "REST API for the Social Media Feed App (Week 5).\n\n## Authentication\nAuth uses a **JWT stored in an httpOnly cookie** named `token`. The token is never returned in the response body. Postman stores the cookie after **Login** and sends it automatically with later requests, the same way a browser does.\n\n## How to use\n1. Set `baseUrl`, in the collection **Variables** tab:\n   - Local: `http://localhost:5000/api`\n   - Live: `https://social-feed-api.vercel.app/api`\n2. Run the requests in order (top to bottom), or use **Run collection**. Every request has tests that check the status code and response shape.\n3. **Register** generates a fresh email each run and saves it in `testEmail`, so the whole collection can be re-run without duplicate-email failures. The fixed demo account for manual testing is `test@example.com` / `password123`.\n\n## Response format\nSuccess: `{ \"success\": true, ... }`\n\nError: `{ \"success\": false, \"message\": \"...\", \"errors\": { \"field\": \"message\" } }`. `errors` is only present on validation failures.\n\n## Status codes\n| Code | Meaning |\n|---|---|\n| 200 | OK |\n| 201 | Created (register) |\n| 400 | Validation failed / invalid JSON |\n| 401 | Not authenticated, invalid or expired token, wrong credentials |\n| 403 | Not the owner of the post |\n| 404 | Route or post not found |\n| 409 | Email already registered |\n| 503 | Health check: database disconnected |",
+    "description": "REST API for the Social Media Feed App (Week 5).\n\n## Authentication\nAuth uses a **JWT stored in an httpOnly cookie** named `token`. The token is never returned in the response body. Postman stores the cookie after **Login** and sends it automatically with later requests, the same way a browser does.\n\n## How to use\n1. Set `baseUrl`, in the collection **Variables** tab:\n   - Local: `http://localhost:5000/api`\n   - Live: `https://social-feed-api.vercel.app/api`\n2. Run the requests in order (top to bottom), or use **Run collection**. Every request has tests that check the status code and response shape.\n3. **Register** generates a fresh email each run and saves it in `testEmail`, so the whole collection can be re-run without duplicate-email failures. The fixed demo account for manual testing is `test@example.com` / `password123`.\n\n## Response format\nSuccess: `{ \"success\": true, ... }`\n\nError: `{ \"success\": false, \"message\": \"...\", \"errors\": { \"field\": \"message\" } }`. `errors` is only present on validation failures.\n\n## Status codes\n| Code | Meaning |\n|---|---|\n| 200 | OK |\n| 201 | Created (register) |\n| 400 | Validation failed / invalid JSON |\n| 401 | Not authenticated, invalid or expired token, wrong credentials |\n| 403 | Not the owner of the post or comment, or trying to follow yourself |\n| 404 | Route, user, post or comment not found |\n| 409 | Email already registered |\n| 503 | Health check: database disconnected |",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "46357609"
   },
@@ -1333,7 +1333,7 @@
           "response": []
         }
       ],
-      "description": "User profile endpoints. More will be added on later days (profile editing, public profiles)."
+      "description": "User profiles and search. 🔒 Logged-in users only.\n\n- `GET /users/me` and `PATCH /users/me`: your own profile (name, bio, avatar)\n- `GET /users/:id`: public profile with counts and `isFollowing`\n- `GET /users?search=`: search by name (page/limit pagination, excludes yourself)\n- `GET /users/:id/posts`: a user's posts (in **Posts - Ownership**, after posts exist)"
     },
     {
       "name": "Follow",
@@ -2905,7 +2905,7 @@
     },
     {
       "name": "Posts - Ownership",
-      "description": "Proves users can't edit or delete other users' posts. The requests run in order:\n\n1. Register a second user (`otherEmail`)\n2. Log in as that user\n3. Create a post as that user (`otherPostId`)\n4. Log back in as the main user\n5. Try to edit and delete the other user's post. Both return **403**.",
+      "description": "Proves users can't edit or delete other users' posts. The requests run in order:\n\n1. Register a second user (`otherEmail`)\n2. Log in as that user\n3. Create a post as that user (`otherPostId`)\n4. Log back in as the main user\n5. Try to edit and delete the other user's post. Both return **403**.\n\nThe second half tests the personalized feed (`GET /posts/feed` and its spec alias `GET /feed`) and one user's posts (`GET /users/:id/posts`): the main user follows a feed target, and posts from an unfollowed user must not show up.",
       "item": [
         {
           "name": "Register Other User",
@@ -3685,6 +3685,204 @@
               ]
             },
             "description": "🔒 `limit` caps the page size, same as the main feed."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Following Feed - /api/feed Alias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Same posts as /posts/feed\", () => {",
+                  "  const ids = pm.response.json().posts.map((p) => p.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"mainFeedPostId\"));",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"followedFeedPostId\"));",
+                  "  pm.expect(pm.response.json().posts.map((p) => p.content)).to.not.include(\"Unfollowed feed post\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/feed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "feed"
+              ]
+            },
+            "description": "🔒 `GET /api/feed` from the task spec. It uses the same handler as `GET /posts/feed`, so the response is identical."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Posts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Only that user's posts\", () => {",
+                  "  const { posts, pagination } = pm.response.json();",
+                  "  pm.expect(posts.map((p) => p.id)).to.include(pm.collectionVariables.get(\"followedFeedPostId\"));",
+                  "  posts.forEach((p) => pm.expect(p.author.id).to.eql(pm.collectionVariables.get(\"feedTargetId\")));",
+                  "  pm.expect(pagination).to.have.property(\"hasMore\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{feedTargetId}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{feedTargetId}}",
+                "posts"
+              ]
+            },
+            "description": "🔒 Posts written by one user, newest first. Used by the profile page.\n\n**Response (200)**: `{ posts, pagination: { limit, hasMore } }`, same shape and cursor params (`before`, `beforeId`, `limit`) as `GET /posts`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Posts - Pagination",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Respects limit\", () => pm.expect(pm.response.json().posts.length).to.be.at.most(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{mainUserId}}/posts?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{mainUserId}}",
+                "posts?limit=1"
+              ]
+            },
+            "description": "🔒 `limit` caps the page size."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Posts - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Says the user was not found\", () => pm.expect(pm.response.json().message).to.eql(\"User not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/000000000000000000000000/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "000000000000000000000000",
+                "posts"
+              ]
+            },
+            "description": "🔒 A valid id that doesn't exist.\n\n**Expected (404)**: `User not found`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Posts - Invalid Id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/abc/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "abc",
+                "posts"
+              ]
+            },
+            "description": "🔒 Not a valid ObjectId.\n\n**Expected (400)**: validation error"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Posts - Cursor Sent Alone - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{mainUserId}}/posts?before=2024-01-01T00:00:00.000Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{mainUserId}}",
+                "posts?before=2024-01-01T00:00:00.000Z"
+              ]
+            },
+            "description": "🔒 `before` must be sent together with `beforeId`.\n\n**Expected (400)**: validation error"
           },
           "response": []
         }

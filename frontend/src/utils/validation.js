@@ -72,3 +72,25 @@ export function validateComment(content) {
   }
   return "";
 }
+
+export const BIO_MAX_LENGTH = 160;
+
+export function validateProfile({ name, bio, avatar }) {
+  const errors = {};
+
+  if (!name.trim()) {
+    errors.name = "Name is required";
+  } else if (name.trim().length < 2 || name.trim().length > 50) {
+    errors.name = "Name must be 2-50 characters";
+  }
+
+  if (bio.trim().length > BIO_MAX_LENGTH) {
+    errors.bio = `Bio cannot exceed ${BIO_MAX_LENGTH} characters`;
+  }
+
+  if (avatar.trim() && !IMAGE_URL_REGEX.test(avatar.trim())) {
+    errors.avatar = "Avatar must be a valid https:// link";
+  }
+
+  return errors;
+}

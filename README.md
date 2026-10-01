@@ -28,22 +28,26 @@ social-media-feed/
 │       ├── server.js             # Local entry: connect DB, then app.listen
 │       ├── app.js                # Express app: middleware, routes, error handling
 │       ├── config/db.js          # Cached MongoDB connection
-│       ├── models/               # User, Post, Like, Comment
-│       ├── controllers/          # auth, user, post, like, comment
-│       ├── routes/               # health, auth, user, post (incl. likes and comments), comment
+│       ├── models/               # User, Post, Like, Comment, Follow
+│       ├── controllers/          # auth, user, follow, post, like, comment
+│       ├── routes/               # health, auth, user (incl. follow), post (incl. likes and comments), comment, feed
 │       ├── middleware/           # auth (protect), validate, rateLimiters, notFound, errorHandler
-│       ├── validators/           # express-validator rules (auth, posts, comments)
+│       ├── validators/           # express-validator rules (auth, users, posts, comments)
 │       └── utils/                # AppError, generateToken, tokenCookie
 ├── frontend/
 │   ├── vercel.json               # SPA fallback + /api proxy to the backend
 │   └── src/
 │       ├── api/axios.js          # Axios instance (baseURL, withCredentials)
 │       ├── context/              # AuthContext + AuthProvider
-│       ├── hooks/                # useAuth, useFeed (feed state + pagination), useLike (optimistic likes)
+│       ├── hooks/                # useAuth, useFeed (feed state + pagination), useLike (optimistic likes),
+│       │                         # useFollow (optimistic follow)
 │       ├── components/           # Route guards, layouts, Navbar, FormInput, Avatar, Logo,
-│       │                         # CreatePost, PostCard, LikeButton, CommentsSection, CommentItem, Icons
-│       ├── pages/                # Login, Register, Dashboard, Profile
-│       └── utils/                # validation (forms + posts), time (relative timestamps)
+│       │                         # CreatePost, PostCard, LikeButton, CommentsSection, CommentItem, Icons,
+│       │                         # FeedList, PostGridTile, FollowButton, UserRow, EditProfileForm, UserListSkeleton
+│       ├── pages/                # Login, Register, Dashboard, UserProfile, Search, FollowList,
+│       │                         # Profile (redirects to your own /users/:id)
+│       └── utils/                # validation (forms, posts, profile), time (relative timestamps),
+│                                 # followEvents (keeps follow buttons in sync)
 └── week5/                        # Per-day snapshots for evaluation (see week5/README.md)
 ```
 
@@ -106,6 +110,15 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 | POST | `/api/auth/logout` | – | Clear the auth cookie |
 | GET | `/api/auth/me` | 🔒 | Current session user |
 | GET | `/api/users/me` | 🔒 | Current user's profile |
+| PATCH | `/api/users/me` | 🔒 | Edit your `name`, `bio` and/or `avatar` |
+| GET | `/api/users?search=<name>&page=1&limit=10` | 🔒 | Search users by name (excludes you), with `isFollowing` |
+| GET | `/api/users/:id` | 🔒 | Public profile with post, follower and following counts and `isFollowing` |
+| GET | `/api/users/:id/posts?limit=10` | 🔒 | One user's posts, newest first (`before` + `beforeId` for more) |
+| POST | `/api/users/:id/follow` | 🔒 | Follow a user → updated counts (safe to repeat) |
+| DELETE | `/api/users/:id/follow` | 🔒 | Unfollow a user → updated counts (safe to repeat) |
+| GET | `/api/users/:id/followers?limit=20` | 🔒 | Who follows this user (`before` + `beforeId` for more) |
+| GET | `/api/users/:id/following?limit=20` | 🔒 | Who this user follows (`before` + `beforeId` for more) |
+| GET | `/api/feed?limit=10` | 🔒 | Personalized feed: your posts + posts from people you follow. Same as `/api/posts/feed`. |
 | POST | `/api/posts` | 🔒 | Create a post (`201`) |
 | GET | `/api/posts?limit=10` | 🔒 | Feed, newest first (cursor mode, the default) |
 | GET | `/api/posts?before=<createdAt>&beforeId=<id>&limit=10` | 🔒 | Next page of the feed (Load more) |
@@ -120,9 +133,9 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 | PATCH | `/api/comments/:id` | 🔒 owner | Edit a comment |
 | DELETE | `/api/comments/:id` | 🔒 owner | Delete a comment |
 
-**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's or comment's owner · `404` unknown route, post, or comment · `409` email already registered · `429` too many login or sign-up attempts.
+**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's or comment's owner, or following yourself · `404` unknown route, user, post, or comment · `409` email already registered · `429` too many login or sign-up attempts.
 
-**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** and **Comments - Ownership** folders use a second user to prove the `403` cases (109 requests, 130 assertions).
+**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** and **Comments - Ownership** folders use a second user to prove the `403` cases. A full run sends 164 requests with 216 assertions, all passing.
 
 ---
 
@@ -267,6 +280,62 @@ A review of the Day 1 and Day 2 code found no critical issues: no NoSQL injectio
 
 ---
 
+## Day 4 — Profiles, follow system and personalized feed
+
+**Goal:** a logged-in user can search users → open a profile → follow → see the follower count update → view followers and following → unfollow → view a personalized feed.
+
+### What was built
+
+**Backend**
+- `Follow` model (`follower`, `following`, `createdAt`) with a **unique index on `{ follower, following }`** and a check that rejects following yourself.
+- `User` now stores `followerCount`, `followingCount` and `postCount`.
+- Profiles: `GET /api/users/:id` (public fields, counts, `isFollowing`) and `PATCH /api/users/me` (name, bio up to 160 characters, `https://` avatar URL).
+- Follow and unfollow return the updated counts. Followers and following lists are cursor-paginated and include `isFollowing` for each user.
+- `GET /api/users?search=` searches by name, case-insensitive, with page/limit pagination. It never returns emails, and it excludes the person searching.
+- `GET /api/feed` (also available at `/api/posts/feed`): your own posts plus posts from people you follow, newest first.
+- `GET /api/users/:id/posts`: one user's posts for the profile page.
+- The Postman collection has a Follow folder and covers every new endpoint, including `404`, `400` and `403` cases.
+
+**Frontend**
+- **Profile page `/users/:id`:** avatar, name, bio, join date, and Posts, Followers and Following counts. Followers and Following link to their lists. Your own profile shows **Edit profile**. Anyone else's shows **Follow/Unfollow**.
+- **Posts on the profile, Instagram style:** a 3-column grid by default.
+  - Photo posts show the photo. Text posts show their first lines on a soft color.
+  - Hovering or keyboard-focusing a tile shows its like and comment counts.
+  - Clicking a tile opens the list view at that post, with a sticky "← Back to grid" bar. The full card works there: like, comment, edit, delete.
+  - Going back scrolls the grid to the same tile. Grid and list icons switch between the views.
+- **Edit profile form:** inline, with validation that matches the API, a bio counter, and Escape to cancel. The Navbar avatar updates right away.
+- **Search page `/search`:** results update as you type (300 ms debounce), the query stays in the URL (`?q=`), and there's a Load more button.
+- **Followers and Following pages:** tabs, Load more, and an empty state that links to search.
+- **Home feed:** **Following** (personalized) and **Everyone** tabs.
+- **One follow button everywhere** (profile, search, lists), with optimistic updates and a revert if the request fails.
+
+### Key decisions and why
+
+**Direct follow, no follow requests.** The task describes a public follow: follow → counts update. Follow requests and accept/decline would need private accounts and a pending state, which the task doesn't ask for.
+
+**Follows are race-safe and counters change atomically.** Same approach as likes: one `updateOne` with `upsert`, and the counts only change with `$inc` when a follow was actually inserted (`upsertedCount === 1`) or removed (`deletedCount === 1`). A duplicate-key error from a parallel request counts as "already following". Following twice or unfollowing twice never changes the counts twice.
+
+**Counts are stored, not counted per request.** Profile pages and search results show counts for many users. Counting follows or posts on every request would get slower as data grows, so the counts live on `User` and update with `$inc`.
+
+**Search escapes regex characters.** The search text is escaped before it's used in `$regex`, so `.*` searches for those characters literally. It can't match every user or run an expensive pattern.
+
+**Cursor pagination for growing lists, page/limit for search.** Feeds and follow lists use the same `before` + `beforeId` cursor as Day 2, so new follows or posts never make Load more repeat or skip an item. Search results are a fixed snapshot, where page/limit is simpler and gives a total count.
+
+**`/api/feed` and `/api/posts/feed` share one handler.** `/api/feed` is the path in the task spec. The frontend already used `/api/posts/feed`, so both stay working instead of one being renamed.
+
+**Follow buttons stay in sync through one event.** The same user can appear on a profile, in search results and in a followers list at once. After a follow changes, `useFollow` dispatches a `follow-change` window event with the new state and counts. Every button and the profile header for that user update, without a global store.
+
+**Grid and list share the same posts.** Both views read from one `useFeed` state inside `FeedList`, so a like, comment, edit or delete in the list is already in the grid when you go back, with no refetch. Scroll targets are plain element ids (`post-<id>`, `tile-<id>`).
+
+**Likes and comments no longer mark a post "Edited".** A `$inc` on `likeCount` or `commentCount` also changed `updatedAt`, which the card uses for the "Edited" label. Those updates now pass `timestamps: false`.
+
+**Fixes found during testing.**
+- A missing `JWT_EXPIRES_IN` now falls back to `7d` instead of creating a token that never expires.
+- Login rejects a non-string password with a clean `400`.
+- One account had a stale `postCount` from posts created before the counter existed. It was recomputed from the real posts.
+
+---
+
 ## Deployment (Vercel)
 
 The frontend and backend are two separate Vercel projects from the same repo.
@@ -307,6 +376,7 @@ Locally, `VITE_API_URL` points straight at `http://localhost:5000/api`. `localho
 - **Logout doesn't revoke the JWT.** It clears the cookie, but a copied token stays valid until it expires (7 days). A token blocklist or short-lived access tokens with refresh tokens would fix this.
 - **The rate limiter uses in-memory storage.** On Vercel each serverless instance keeps its own counters, so the limit applies per instance. A shared store such as Redis would make it global.
 - **No email verification.** Registration therefore reveals whether an email is already in use.
-- **Profile editing** is planned for a later day. `avatar` and `bio` exist in the schema but can't be changed from the UI yet.
+- **Avatars are URLs, not uploads.** Users paste a direct `https://` image link. File upload would need storage such as Cloudinary or S3.
+- **All accounts are public.** Anyone logged in can follow anyone. There are no private accounts or follow requests (see Day 4).
 - **Relative timestamps** ("5 minutes ago") only update on re-render or refresh.
-- **Relationships are cleaned up only for post deletion.** Deleting a user account (not implemented yet) would also need to remove that user's posts, likes, and comments.
+- **Relationships are cleaned up only for post deletion.** Deleting a user account (not implemented yet) would also need to remove that user's posts, likes, comments, and follows, and fix the other users' counts.

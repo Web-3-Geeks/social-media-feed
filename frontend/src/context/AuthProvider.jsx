@@ -64,9 +64,12 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // After a profile edit, so the navbar and banner show the new name/avatar.
+  const updateUser = useCallback((updated) => setUser(updated), []);
+
   const value = useMemo(
-    () => ({ user, loading, sessionExpired, register, login, logout }),
-    [user, loading, sessionExpired, register, login, logout]
+    () => ({ user, loading, sessionExpired, register, login, logout, updateUser }),
+    [user, loading, sessionExpired, register, login, logout, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

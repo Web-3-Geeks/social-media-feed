@@ -147,12 +147,12 @@
 - [x] Postman collection updated
 
 **Part 4 — Frontend**
-- [ ] Profile page `/users/:id` (counts, Follow/Unfollow or Edit Profile, user's posts)
-- [ ] Edit profile form
-- [ ] Follow button shared everywhere (search, profile, lists, feed), state kept in sync
-- [ ] User search page
-- [ ] Followers / Following lists
-- [ ] Home feed: personalized "Following" feed
+- [x] Profile page `/users/:id` (counts, Follow/Unfollow or Edit Profile, user's posts)
+- [x] Edit profile form
+- [x] Follow button shared everywhere (search, profile, lists, feed), state kept in sync
+- [x] User search page
+- [x] Followers / Following lists
+- [x] Home feed: personalized "Following" feed
 
 **Part 5 — Finish up**
 - [ ] Full flow test (local + live), lint, build, audit

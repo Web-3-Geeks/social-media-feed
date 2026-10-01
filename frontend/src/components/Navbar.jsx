@@ -29,7 +29,10 @@ export default function Navbar() {
           <NavLink to="/" end className={navLinkClass}>
             Home
           </NavLink>
-          <NavLink to="/profile" className={navLinkClass}>
+          <NavLink to="/search" className={navLinkClass}>
+            Search
+          </NavLink>
+          <NavLink to={`/users/${user.id}`} end className={navLinkClass}>
             Profile
           </NavLink>
         </div>

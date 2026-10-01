@@ -3,7 +3,7 @@ import api, { getErrorMessage } from "../api/axios";
 
 const PAGE_SIZE = 10;
 
-export function useFeed() {
+export function useFeed(endpoint = "/posts") {
   const [posts, setPosts] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -16,7 +16,7 @@ export function useFeed() {
     let ignore = false;
 
     api
-      .get("/posts", { params: { limit: PAGE_SIZE } })
+      .get(endpoint, { params: { limit: PAGE_SIZE } })
       .then((res) => {
         if (ignore) return;
         setPosts(res.data.posts);
@@ -32,7 +32,7 @@ export function useFeed() {
     return () => {
       ignore = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, endpoint]);
 
   const retry = useCallback(() => {
     setLoading(true);
@@ -51,7 +51,7 @@ export function useFeed() {
       const params = last
         ? { before: last.createdAt, beforeId: last.id, limit: PAGE_SIZE }
         : { limit: PAGE_SIZE };
-      const res = await api.get("/posts", { params });
+      const res = await api.get(endpoint, { params });
       // Safety net: never add a post that's already in the list.
       setPosts((prev) => {
         const seen = new Set(prev.map((p) => p.id));
@@ -63,7 +63,7 @@ export function useFeed() {
     } finally {
       setLoadingMore(false);
     }
-  }, [posts]);
+  }, [posts, endpoint]);
 
   const addPost = useCallback((post) => {
     setPosts((prev) => [post, ...prev.filter((p) => p.id !== post.id)]);

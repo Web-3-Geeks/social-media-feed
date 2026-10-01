@@ -26,7 +26,7 @@ export const likePost = async (req, res) => {
   }
 
   const post = created
-    ? await Post.findByIdAndUpdate(postId, { $inc: { likeCount: 1 } }, { returnDocument: "after" })
+    ? await Post.findByIdAndUpdate(postId, { $inc: { likeCount: 1 } }, { returnDocument: "after", timestamps: false })
     : await Post.findById(postId);
 
   res.status(200).json({
@@ -44,7 +44,7 @@ export const unlikePost = async (req, res) => {
 
   const post =
     result.deletedCount === 1
-      ? await Post.findByIdAndUpdate(postId, { $inc: { likeCount: -1 } }, { returnDocument: "after" })
+      ? await Post.findByIdAndUpdate(postId, { $inc: { likeCount: -1 } }, { returnDocument: "after", timestamps: false })
       : await Post.findById(postId);
 
   res.status(200).json({

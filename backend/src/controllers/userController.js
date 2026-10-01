@@ -65,9 +65,18 @@ export const searchUsers = async (req, res) => {
     User.countDocuments(filter),
   ]);
 
+  const follows = await Follow.find({
+    follower: req.user._id,
+    following: { $in: users.map((u) => u._id) },
+  }).select("following");
+  const followingIds = new Set(follows.map((f) => String(f.following)));
+
   res.status(200).json({
     success: true,
-    users,
+    users: users.map((u) => ({
+      ...u.toJSON(),
+      isFollowing: followingIds.has(String(u._id)),
+    })),
     pagination: {
       page,
       limit,

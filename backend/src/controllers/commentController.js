@@ -34,7 +34,8 @@ export const createComment = async (req, res) => {
     author: req.user._id,
     content: req.body.content,
   });
-  await Post.updateOne({ _id: postId }, { $inc: { commentCount: 1 } });
+  // timestamps: false so a new comment doesn't make the post look "Edited".
+  await Post.updateOne({ _id: postId }, { $inc: { commentCount: 1 } }, { timestamps: false });
   await comment.populate("author", AUTHOR_FIELDS);
 
   res.status(201).json({
@@ -97,6 +98,7 @@ export const deleteComment = async (req, res) => {
   await Post.updateOne(
     { _id: comment.post, commentCount: { $gt: 0 } },
     { $inc: { commentCount: -1 } },
+    { timestamps: false },
   );
 
   res.status(200).json({

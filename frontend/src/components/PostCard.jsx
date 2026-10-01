@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router";
 import { fullDateTime, timeAgo } from "../utils/time";
 import Avatar from "./Avatar";
 import CommentsSection from "./CommentsSection";
@@ -97,19 +98,30 @@ export default function PostCard({ post, isOwn, onUpdated, onDeleted, onPatch })
 
   return (
     <article
-      className={`rounded-2xl border bg-white p-5 transition hover:shadow-md ${
+      id={`post-${post.id}`}
+      className={`scroll-mt-36 rounded-2xl border bg-white p-5 transition hover:shadow-md ${
         isOwn
           ? "border-blue-200 bg-linear-to-b from-blue-50/60 to-white"
           : "border-gray-200"
       }`}
     >
       <header className="flex items-center gap-3">
-        <Avatar user={post.author} size={40} />
+        <Link
+          to={`/users/${post.author.id}`}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="shrink-0"
+        >
+          <Avatar user={post.author} size={40} />
+        </Link>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="truncate font-semibold text-gray-900">
+            <Link
+              to={`/users/${post.author.id}`}
+              className="truncate font-semibold text-gray-900 hover:underline focus:outline-none focus-visible:underline"
+            >
               {post.author.name}
-            </span>
+            </Link>
             {isOwn && (
               <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
                 You
