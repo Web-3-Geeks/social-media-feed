@@ -135,7 +135,7 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 
 **Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's or comment's owner, or following yourself · `404` unknown route, user, post, or comment · `409` email already registered · `429` too many login or sign-up attempts.
 
-**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** and **Comments - Ownership** folders use a second user to prove the `403` cases. A full run sends 164 requests with 216 assertions, all passing.
+**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** and **Comments - Ownership** folders use a second user to prove the `403` cases. A full run sends 164 requests with 216 assertions, all passing. From the command line: `npx newman run postman-collection.json --env-var baseUrl=https://social-feed-api.vercel.app/api` (run inside `backend/`).
 
 ---
 
@@ -333,6 +333,7 @@ A review of the Day 1 and Day 2 code found no critical issues: no NoSQL injectio
 - A missing `JWT_EXPIRES_IN` now falls back to `7d` instead of creating a token that never expires.
 - Login rejects a non-string password with a clean `400`.
 - One account had a stale `postCount` from posts created before the counter existed. It was recomputed from the real posts.
+- The Postman auto-login scripts read `baseUrl` with `pm.variables` instead of `pm.collectionVariables`, so a run against the live API logs in to the live API, not localhost.
 
 ---
 

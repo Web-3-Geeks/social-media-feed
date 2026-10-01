@@ -155,5 +155,5 @@
 - [x] Home feed: personalized "Following" feed
 
 **Part 5 — Finish up**
-- [ ] Full flow test (local + live), lint, build, audit
-- [ ] README Day 4 section, `week5/Day4` snapshot, push
+- [x] Full flow test (local + live), lint, build, audit
+- [x] README Day 4 section, `week5/Day4` snapshot, push
