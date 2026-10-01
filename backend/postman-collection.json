@@ -509,7 +509,7 @@
                 "exec": [
                   "// This folder runs after Logout, so log in again to get a fresh cookie.",
                   "pm.sendRequest({",
-                  "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+                  "  url: pm.variables.get(\"baseUrl\") + \"/auth/login\",",
                   "  method: \"POST\",",
                   "  header: { \"Content-Type\": \"application/json\" },",
                   "  body: {",
@@ -974,7 +974,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.sendRequest({",
-                  "  url: pm.collectionVariables.get(\"baseUrl\") + \"/users/me\",",
+                  "  url: pm.variables.get(\"baseUrl\") + \"/users/me\",",
                   "  method: \"GET\",",
                   "}, (err, res) => {",
                   "  pm.variables.set(\"selfId\", res.json().user.id);",
@@ -2017,7 +2017,7 @@
               "// Log in before each request in this folder, so it works after Auth → Logout",
               "// and when the folder is run on its own.",
               "pm.sendRequest({",
-              "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+              "  url: pm.variables.get(\"baseUrl\") + \"/auth/login\",",
               "  method: \"POST\",",
               "  header: { \"Content-Type\": \"application/json\" },",
               "  body: { mode: \"raw\", raw: JSON.stringify({",
@@ -2496,7 +2496,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "// Fetch the first 2 posts and use the last one as the cursor.",
-                  "pm.sendRequest({ url: pm.collectionVariables.get(\"baseUrl\") + \"/posts?page=1&limit=2\", method: \"GET\" }, (err, res) => {",
+                  "pm.sendRequest({ url: pm.variables.get(\"baseUrl\") + \"/posts?page=1&limit=2\", method: \"GET\" }, (err, res) => {",
                   "  const last = res.json().posts.slice(-1)[0];",
                   "  pm.variables.set(\"cursorDate\", last.createdAt);",
                   "  pm.variables.set(\"cursorId\", last.id);",
@@ -3899,7 +3899,7 @@
             "exec": [
               "// Log in before each request so the folder works on its own.",
               "pm.sendRequest({",
-              "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+              "  url: pm.variables.get(\"baseUrl\") + \"/auth/login\",",
               "  method: \"POST\",",
               "  header: { \"Content-Type\": \"application/json\" },",
               "  body: { mode: \"raw\", raw: JSON.stringify({",
@@ -4177,7 +4177,7 @@
             "exec": [
               "// Log in before each request so the folder works on its own.",
               "pm.sendRequest({",
-              "  url: pm.collectionVariables.get(\"baseUrl\") + \"/auth/login\",",
+              "  url: pm.variables.get(\"baseUrl\") + \"/auth/login\",",
               "  method: \"POST\",",
               "  header: { \"Content-Type\": \"application/json\" },",
               "  body: { mode: \"raw\", raw: JSON.stringify({",
@@ -4959,7 +4959,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "// Like the post first, so there is a like and comments to cascade.",
-                  "pm.sendRequest({ url: pm.collectionVariables.get(\"baseUrl\") + \"/posts/\" + pm.collectionVariables.get(\"engagePostId\") + \"/like\", method: \"POST\" });"
+                  "pm.sendRequest({ url: pm.variables.get(\"baseUrl\") + \"/posts/\" + pm.collectionVariables.get(\"engagePostId\") + \"/like\", method: \"POST\" });"
                 ]
               }
             },
