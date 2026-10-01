@@ -34,6 +34,21 @@ const userSchema = new mongoose.Schema(
       trim: true,
       maxlength: [160, "Bio cannot exceed 160 characters"],
     },
+    followerCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    followingCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    postCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
   },
   { timestamps: true },
 );

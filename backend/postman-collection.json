@@ -554,9 +554,1456 @@
             "description": "🔒 **Protected.** Returns the logged-in user's profile for the Profile page: `id`, `name`, `email`, `avatar`, `bio`, `createdAt` (join date), and `updatedAt`.\n\n**How it differs from `/auth/me`:** `/auth/me` answers \"who is logged in?\" for the session check. `/users/me` is the profile resource. Profile editing (`PATCH /users/me`) and public profiles (`GET /users/:id`) will be added here later.\n\n**Responses**\n- **200**: `{ success: true, user }`\n- **401**: not authenticated\n\nThe pre-request script logs in first, because this runs after Logout in the collection order."
           },
           "response": []
+        },
+        {
+          "name": "Register Search User A",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts = Date.now();",
+                  "pm.collectionVariables.set(\"searchTs\", ts);",
+                  "pm.collectionVariables.set(\"searchUserAEmail\", `searcha${ts}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"searchUserAId\", pm.response.json().user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"SearchTarget{{searchTs}} Alpha\",\n  \"email\": \"{{searchUserAEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a user to be found by the search tests below. Registering doesn't touch the current session cookie."
+          },
+          "response": []
+        },
+        {
+          "name": "Register Search User B",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"searchUserBEmail\", `searchb${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"searchUserBId\", pm.response.json().user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"SearchTarget{{searchTs}} Beta\",\n  \"email\": \"{{searchUserBEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A second user, so search-pagination has 2 results to split across pages."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Public profile has no email, includes isFollowing\", () => {",
+                  "  const user = pm.response.json().user;",
+                  "  pm.expect(user).to.include.all.keys(\"id\", \"name\", \"avatar\", \"bio\", \"followerCount\", \"followingCount\", \"postCount\", \"createdAt\", \"isFollowing\");",
+                  "  pm.expect(user).to.not.have.property(\"email\");",
+                  "  pm.expect(user.isFollowing).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{searchUserAId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{searchUserAId}}"
+              ]
+            },
+            "description": "🔒 Public profile view of another user. **Must not leak `email`** — unlike `/users/me`, this is visible to any logged-in user."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Profile - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Says the user was not found\", () => pm.expect(pm.response.json().message).to.eql(\"User not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/000000000000000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "000000000000000000000000"
+              ]
+            },
+            "description": "🔒 A valid id that doesn't exist.\n\n**Expected (404)**: `User not found`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Profile - Invalid Id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Invalid id error\", () => pm.expect(pm.response.json().errors.id).to.eql(\"Invalid user id\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "abc"
+              ]
+            },
+            "description": "🔒 `abc` isn't a MongoDB id.\n\n**Expected (400)**: `errors.id = \"Invalid user id\"`"
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users - Matches Multiple",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Finds both search targets, no email leaked\", () => {",
+                  "  const { users, pagination } = pm.response.json();",
+                  "  const ids = users.map((u) => u.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"searchUserAId\"));",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"searchUserBId\"));",
+                  "  users.forEach((u) => pm.expect(u).to.not.have.property(\"email\"));",
+                  "  pm.expect(pagination.total).to.be.at.least(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?search=SearchTarget{{searchTs}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?search=SearchTarget{{searchTs}}"
+              ]
+            },
+            "description": "🔒 Case-insensitive, name-only search (no email search, to avoid email enumeration)."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users - Case Insensitive",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Matches regardless of case\", () => {",
+                  "  const ids = pm.response.json().users.map((u) => u.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"searchUserAId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?search=SEARCHTARGET{{searchTs}} ALPHA",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?search=SEARCHTARGET{{searchTs}} ALPHA"
+              ]
+            },
+            "description": "🔒 Same user as above, searched in uppercase."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users - Regex Chars Are Literal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200, not a server error\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Regex metacharacters don't match everything\", () => {",
+                  "  pm.expect(pm.response.json().users).to.eql([]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?search=.*",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?search=.*"
+              ]
+            },
+            "description": "🔒 `.*` is escaped before being used in `$regex`, so it's matched literally (no results), not as \"match anything\"."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users - Empty Query - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Search query is required\", () => pm.expect(pm.response.json().errors.search).to.eql(\"Search query is required\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?search=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?search="
+              ]
+            },
+            "description": "🔒 `search` can't be blank.\n\n**Expected (400)**: `errors.search = \"Search query is required\"`"
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users - Pagination Page 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"One result, page 1 of 2\", () => {",
+                  "  const { users, pagination } = pm.response.json();",
+                  "  pm.expect(users.length).to.eql(1);",
+                  "  pm.expect(pagination).to.eql({ page: 1, limit: 1, total: 2, totalPages: 2 });",
+                  "  pm.collectionVariables.set(\"searchPage1Id\", users[0].id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?search=SearchTarget{{searchTs}}&limit=1&page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?search=SearchTarget{{searchTs}}&limit=1&page=1"
+              ]
+            },
+            "description": "🔒 Page/limit pagination (not cursor) — search results are a small, fixed set rather than an infinite feed."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users - Pagination Page 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Different result on page 2\", () => {",
+                  "  const { users, pagination } = pm.response.json();",
+                  "  pm.expect(users.length).to.eql(1);",
+                  "  pm.expect(pagination.page).to.eql(2);",
+                  "  pm.expect(users[0].id).to.not.eql(pm.collectionVariables.get(\"searchPage1Id\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?search=SearchTarget{{searchTs}}&limit=1&page=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?search=SearchTarget{{searchTs}}&limit=1&page=2"
+              ]
+            },
+            "description": "🔒 Page 2 returns the other search target, not a repeat of page 1."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Users - Excludes Self",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({",
+                  "  url: pm.collectionVariables.get(\"baseUrl\") + \"/users/me\",",
+                  "  method: \"GET\",",
+                  "}, (err, res) => {",
+                  "  pm.variables.set(\"selfId\", res.json().user.id);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Self never appears in search results\", () => {",
+                  "  const ids = pm.response.json().users.map((u) => u.id);",
+                  "  pm.expect(ids).to.not.include(pm.variables.get(\"selfId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?search=Test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?search=Test"
+              ]
+            },
+            "description": "🔒 Searching for your own name never returns your own account."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile - Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Name and bio updated\", () => {",
+                  "  const user = pm.response.json().user;",
+                  "  pm.expect(user.name).to.eql(\"Test User Updated\");",
+                  "  pm.expect(user.bio).to.eql(\"Building a social feed app\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User Updated\",\n  \"bio\": \"Building a social feed app\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Updates name and bio. `req.user` is a full Mongoose document (no `.select()` restricting it beyond the schema), so `.save()` works directly."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile - Invalid Avatar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Avatar must be https\", () => pm.expect(pm.response.json().errors.avatar).to.eql(\"Avatar must be a valid https:// link\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"avatar\": \"http://insecure.com/a.png\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Plain `http://` is rejected; only `https://` avatars are allowed."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile - Bio Too Long",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"longBio\", \"a\".repeat(161));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Bio cannot exceed 160 characters\", () => pm.expect(pm.response.json().errors.bio).to.eql(\"Bio cannot exceed 160 characters\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bio\": \"{{longBio}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 161 characters, one over the limit."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile - Nothing To Update",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Nothing to update\", () => pm.expect(pm.response.json().errors.body).to.eql(\"Nothing to update\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 An empty body isn't allowed — at least one of `name`, `bio`, `avatar` must be present."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout (Before No-Auth Profile Test)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Logs out so the next request has no cookie, to test the 401 case."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile - No Auth",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Should Not Apply\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "No cookie sent.\n\n**Expected (401)**: not authenticated"
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User (Restore Session)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Logs back in as the main user so the Follow folder (which runs next) starts with a known state."
+          },
+          "response": []
         }
       ],
       "description": "User profile endpoints. More will be added on later days (profile editing, public profiles)."
+    },
+    {
+      "name": "Follow",
+      "description": "Follow/unfollow endpoints. A follow is a one-way relationship (`follower` → `following`), and `followerCount`/`followingCount` on both users' profiles stay in sync automatically.",
+      "item": [
+        {
+          "name": "Register Follow Target",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"followTargetEmail\", `other${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"followTargetId\", pm.response.json().user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Follow Target\",\n  \"email\": \"{{followTargetEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a second account to be followed/unfollowed in the tests below."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches the cookie to the main user (`testEmail`) before the follow tests."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"mainUserId\", pm.response.json().user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Captures the main user's own id as `mainUserId`, needed for the self-follow test below."
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Target User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Now following, count is 1\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.following).to.eql(true);",
+                  "  pm.expect(body.followerCount).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "follow"
+              ]
+            },
+            "description": "🔒 Follows the target user. Increments `followingCount` on the main user and `followerCount` on the target, and returns the target's new `followerCount`."
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Target User Again - Idempotent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Still following, count stays 1 (not double-counted)\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.following).to.eql(true);",
+                  "  pm.expect(body.followerCount).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "follow"
+              ]
+            },
+            "description": "🔒 Following twice is safe: the unique index on `{follower, following}` means the second call doesn't insert a duplicate, so the counter isn't incremented again."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Followers of Target",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Main user is the only follower\", () => {",
+                  "  const { users, hasMore } = pm.response.json();",
+                  "  pm.expect(users.length).to.eql(1);",
+                  "  pm.expect(users[0].id).to.eql(pm.collectionVariables.get(\"mainUserId\"));",
+                  "  pm.expect(users[0]).to.include.all.keys(\"followedAt\", \"followId\", \"isFollowing\");",
+                  "  pm.expect(hasMore).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/followers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "followers"
+              ]
+            },
+            "description": "🔒 Who follows the target user. Each entry includes `followedAt`/`followId` (the cursor for the next page) and `isFollowing` (whether the *requester* follows that listed user)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Following of Main User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Target is the only account followed\", () => {",
+                  "  const { users, hasMore } = pm.response.json();",
+                  "  pm.expect(users.length).to.eql(1);",
+                  "  pm.expect(users[0].id).to.eql(pm.collectionVariables.get(\"followTargetId\"));",
+                  "  pm.expect(users[0].isFollowing).to.eql(true);",
+                  "  pm.expect(hasMore).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{mainUserId}}/following",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{mainUserId}}",
+                "following"
+              ]
+            },
+            "description": "🔒 Who the main user follows. `isFollowing` is true here because the requester (main user) really does follow the one listed account."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Followers - Pagination Limit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Respects limit\", () => pm.expect(pm.response.json().users.length).to.be.at.most(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/followers?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "followers?limit=1"
+              ]
+            },
+            "description": "🔒 `limit` caps the page size."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Followers - Cursor Sent Alone - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"before and beforeId must be sent together\", () => pm.expect(pm.response.json().errors.query).to.eql(\"before and beforeId must be sent together\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/followers?before=2024-01-01T00:00:00.000Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "followers?before=2024-01-01T00:00:00.000Z"
+              ]
+            },
+            "description": "🔒 `before` without `beforeId` (or vice versa) is rejected — the cursor needs both to break createdAt ties."
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Self - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Cannot follow yourself\", () => pm.expect(pm.response.json().message).to.eql(\"You cannot follow yourself\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{mainUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{mainUserId}}",
+                "follow"
+              ]
+            },
+            "description": "🔒 A user can't follow their own account.\n\n**Expected (403)**: `You cannot follow yourself`"
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Unknown User - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Says the user was not found\", () => pm.expect(pm.response.json().message).to.eql(\"User not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/000000000000000000000000/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "000000000000000000000000",
+                "follow"
+              ]
+            },
+            "description": "🔒 A valid id that doesn't exist.\n\n**Expected (404)**: `User not found`"
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Invalid Id - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Invalid id error\", () => pm.expect(pm.response.json().errors.id).to.eql(\"Invalid user id\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/abc/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "abc",
+                "follow"
+              ]
+            },
+            "description": "🔒 `abc` isn't a MongoDB id, so validation rejects it before the database is queried.\n\n**Expected (400)**: `errors.id = \"Invalid user id\"`"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Logs out so the next request has no cookie, to test the 401 case."
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Without Auth - Unauthorized",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "follow"
+              ]
+            },
+            "description": "No cookie sent.\n\n**Expected (401)**: not authenticated"
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User (Restore Session)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Logs back in as the main user so the unfollow tests below have a session."
+          },
+          "response": []
+        },
+        {
+          "name": "Unfollow Target User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"No longer following, count is 0\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.following).to.eql(false);",
+                  "  pm.expect(body.followerCount).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "follow"
+              ]
+            },
+            "description": "🔒 Unfollows the target user. Decrements both counters, and returns the target's new `followerCount`."
+          },
+          "response": []
+        },
+        {
+          "name": "Unfollow Target User Again - Idempotent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Stays not-following, count stays 0 (never negative)\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.following).to.eql(false);",
+                  "  pm.expect(body.followerCount).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{followTargetId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{followTargetId}}",
+                "follow"
+              ]
+            },
+            "description": "🔒 Unfollowing twice is safe: the second call deletes nothing (`deletedCount !== 1`), so the counters are never decremented below 0."
+          },
+          "response": []
+        },
+        {
+          "name": "Unfollow Unknown User - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Says the user was not found\", () => pm.expect(pm.response.json().message).to.eql(\"User not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/000000000000000000000000/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "000000000000000000000000",
+                "follow"
+              ]
+            },
+            "description": "🔒 A valid id that doesn't exist.\n\n**Expected (404)**: `User not found`"
+          },
+          "response": []
+        }
+      ]
     },
     {
       "name": "Posts",
@@ -1760,6 +3207,486 @@
             "description": "🔒 Confirms the forbidden edit and delete didn't change anything."
           },
           "response": []
+        },
+        {
+          "name": "Register Feed Follow Target",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"feedTargetEmail\", `feedtarget${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"feedTargetId\", pm.response.json().user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Feed Target\",\n  \"email\": \"{{feedTargetEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A user the main user will follow, for the personalized feed tests below."
+          },
+          "response": []
+        },
+        {
+          "name": "Register Feed Non-Target",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"feedNonTargetEmail\", `feednontarget${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"feedNonTargetId\", pm.response.json().user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Feed Non Target\",\n  \"email\": \"{{feedNonTargetEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A user the main user will NOT follow, to prove the feed excludes them."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Feed Target",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{feedTargetEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches the cookie so this user can post."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Followed Feed Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"followedFeedPostId\", pm.response.json().post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Followed feed post\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A post from someone the main user will follow."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Feed Non-Target",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{feedNonTargetEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches the cookie so this user can post."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Unfollowed Feed Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Unfollowed feed post\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A post from someone the main user does NOT follow — must not appear in the main user's personalized feed."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User (For Feed Tests)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Back to the main user to drive the feed tests."
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Feed Target",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{feedTargetId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{feedTargetId}}",
+                "follow"
+              ]
+            },
+            "description": "Main user follows Feed Target, but not Feed Non-Target."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Main User Feed Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"mainFeedPostId\", pm.response.json().post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Main user own feed post\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "The main user's own fresh post. (Not reusing the earlier `postId` variable — by this point in the run that post has already been deleted by the 'Delete Post' tests in the Posts folder.)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Following Feed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Includes own + followed posts, excludes unfollowed\", () => {",
+                  "  const { posts } = pm.response.json();",
+                  "  const ids = posts.map((p) => p.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"mainFeedPostId\"));",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"followedFeedPostId\"));",
+                  "  const contents = posts.map((p) => p.content);",
+                  "  pm.expect(contents).to.not.include(\"Unfollowed feed post\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/feed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "feed"
+              ]
+            },
+            "description": "🔒 Personalized feed: the main user's own posts plus posts from accounts they follow, newest first. Posts from accounts they don't follow are excluded.\n\n**Response (200)**: `{ posts, pagination: { limit, hasMore } }`, same shape as `GET /posts` (cursor mode only)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Following Feed - Pagination",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Respects limit\", () => pm.expect(pm.response.json().posts.length).to.be.at.most(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/feed?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "feed?limit=1"
+              ]
+            },
+            "description": "🔒 `limit` caps the page size, same as the main feed."
+          },
+          "response": []
         }
       ]
     },
@@ -2953,6 +4880,62 @@
       "value": "",
       "type": "string",
       "description": "Set by Comments - Ownership → Comment as Other User."
+    },
+    {
+      "key": "followTargetEmail",
+      "value": ""
+    },
+    {
+      "key": "followTargetId",
+      "value": ""
+    },
+    {
+      "key": "mainUserId",
+      "value": ""
+    },
+    {
+      "key": "searchUserAEmail",
+      "value": ""
+    },
+    {
+      "key": "searchUserAId",
+      "value": ""
+    },
+    {
+      "key": "searchUserBEmail",
+      "value": ""
+    },
+    {
+      "key": "searchUserBId",
+      "value": ""
+    },
+    {
+      "key": "searchPage1Id",
+      "value": ""
+    },
+    {
+      "key": "feedTargetEmail",
+      "value": ""
+    },
+    {
+      "key": "feedTargetId",
+      "value": ""
+    },
+    {
+      "key": "feedNonTargetEmail",
+      "value": ""
+    },
+    {
+      "key": "feedNonTargetId",
+      "value": ""
+    },
+    {
+      "key": "followedFeedPostId",
+      "value": ""
+    },
+    {
+      "key": "mainFeedPostId",
+      "value": ""
     }
   ]
 }

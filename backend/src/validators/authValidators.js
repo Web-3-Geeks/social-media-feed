@@ -36,5 +36,10 @@ export const loginRules = [
     .withMessage("Please provide a valid email")
     .toLowerCase(),
 
-  body("password").notEmpty().withMessage("Password is required"),
+  body("password")
+    .isString()
+    .withMessage("Password must be text")
+    .bail()
+    .notEmpty()
+    .withMessage("Password is required"),
 ];

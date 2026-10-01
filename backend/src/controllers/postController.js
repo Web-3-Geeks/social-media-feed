@@ -2,6 +2,8 @@ import Comment from "../models/Comment.js";
 import Like from "../models/Like.js";
 import Post from "../models/Post.js";
 import AppError from "../utils/AppError.js";
+import User from "../models/User.js";
+import Follow from "../models/Follow.js";
 
 const AUTHOR_FIELDS = "name avatar";
 
@@ -42,6 +44,7 @@ export const createPost = async (req, res) => {
     content,
     imageUrl: imageUrl || "",
   });
+  await User.updateOne({ _id: req.user._id }, { $inc: { postCount: 1 } });
   await post.populate("author", AUTHOR_FIELDS);
 
   res.status(201).json({
@@ -88,7 +91,11 @@ export const getFeed = async (req, res) => {
   const skip = (page - 1) * limit;
 
   const [posts, total] = await Promise.all([
-    Post.find().sort(FEED_SORT).skip(skip).limit(limit).populate("author", AUTHOR_FIELDS),
+    Post.find()
+      .sort(FEED_SORT)
+      .skip(skip)
+      .limit(limit)
+      .populate("author", AUTHOR_FIELDS),
     Post.countDocuments(),
   ]);
 
@@ -107,6 +114,37 @@ export const getFeed = async (req, res) => {
   });
 };
 
+export const getFollowingFeed = async (req, res) => {
+  const limit = Number(req.query.limit) || 10;
+
+  const follows = await Follow.find({ follower: req.user._id }).select(
+    "following",
+  );
+  const authorIds = [...follows.map((f) => f.following), req.user._id];
+
+  const filter = { author: { $in: authorIds } };
+  if (req.query.before) {
+    const before = new Date(req.query.before);
+    filter.$or = [
+      { createdAt: { $lt: before } },
+      { createdAt: before, _id: { $lt: req.query.beforeId } },
+    ];
+  }
+
+  const posts = await Post.find(filter)
+    .sort(FEED_SORT)
+    .limit(limit + 1)
+    .populate("author", AUTHOR_FIELDS);
+
+  const hasMore = posts.length > limit;
+
+  res.status(200).json({
+    success: true,
+    posts: await withLikedByMe(posts.slice(0, limit), req.user._id),
+    pagination: { limit, hasMore },
+  });
+};
+
 export const getPost = async (req, res) => {
   const post = await Post.findById(req.params.id).populate(
     "author",
@@ -121,22 +159,22 @@ export const getPost = async (req, res) => {
 };
 
 export const updatePost = async (req, res) => {
-    const post = await findPostOr404(req.params.id);
-    assertOwner(post, req.user);
+  const post = await findPostOr404(req.params.id);
+  assertOwner(post, req.user);
 
-    const { content, imageUrl } = req.body;
-    if (content !== undefined) post.content = content;
-    if (imageUrl !== undefined) post.imageUrl = imageUrl || "";
+  const { content, imageUrl } = req.body;
+  if (content !== undefined) post.content = content;
+  if (imageUrl !== undefined) post.imageUrl = imageUrl || "";
 
-    await post.save();
-    await post.populate("author", AUTHOR_FIELDS);
-    const [postWithLike] = await withLikedByMe([post], req.user._id);
+  await post.save();
+  await post.populate("author", AUTHOR_FIELDS);
+  const [postWithLike] = await withLikedByMe([post], req.user._id);
 
-    res.status(200).json({
-        success: true,
-        message: "Post updated",
-        post: postWithLike,
-    });
+  res.status(200).json({
+    success: true,
+    message: "Post updated",
+    post: postWithLike,
+  });
 };
 
 export const deletePost = async (req, res) => {
@@ -148,6 +186,10 @@ export const deletePost = async (req, res) => {
   await Promise.all([
     Like.deleteMany({ post: post._id }),
     Comment.deleteMany({ post: post._id }),
+    User.updateOne(
+      { _id: post.author, postCount: { $gt: 0 } },
+      { $inc: { postCount: -1 } },
+    ),
   ]);
 
   res.status(200).json({
@@ -156,4 +198,3 @@ export const deletePost = async (req, res) => {
     id: post.id,
   });
 };
-

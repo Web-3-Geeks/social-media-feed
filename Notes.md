@@ -121,5 +121,39 @@
 
 **Part 5 — Finish up**
 - [x] Full flow test (local + live), lint, build, audit
-- [ ] README Day 3 section, `week5/Day3` snapshot, push
+- [x] README Day 3 section, `week5/Day3` snapshot, push
 - [x] Fix Day 2 review points (live URL, per-IP login limit, cursor-only feed)
+
+---
+
+## Week 5 · Day 4 — Profiles, Follow System & Personalized Feed
+
+**Goal:** A logged-in user can Search Users → Open Profile → Follow → See Updated Follower Count → View Followers/Following → Unfollow → View Personalized Feed.
+
+### Today's plan
+
+**Part 1 — Profiles API**
+- [x] `GET /api/users/:id`: public profile + post/follower/following counts + `isFollowing`
+- [x] `PATCH /api/users/me`: edit name, bio, avatar URL (validated)
+
+**Part 2 — Follow API**
+- [x] Follow model (follower + following, unique pair, no self-follow, indexes)
+- [x] `POST` / `DELETE /api/users/:id/follow` (safe on repeat, returns updated counts)
+- [x] `GET /api/users/:id/followers` and `/following` (paginated, with follow status)
+
+**Part 3 — Discovery & feed API**
+- [x] `GET /api/users?search=` (by name, paginated, no private fields)
+- [x] `GET /api/feed`: posts from people I follow + my own, newest first
+- [x] Postman collection updated
+
+**Part 4 — Frontend**
+- [ ] Profile page `/users/:id` (counts, Follow/Unfollow or Edit Profile, user's posts)
+- [ ] Edit profile form
+- [ ] Follow button shared everywhere (search, profile, lists, feed), state kept in sync
+- [ ] User search page
+- [ ] Followers / Following lists
+- [ ] Home feed: personalized "Following" feed
+
+**Part 5 — Finish up**
+- [ ] Full flow test (local + live), lint, build, audit
+- [ ] README Day 4 section, `week5/Day4` snapshot, push
