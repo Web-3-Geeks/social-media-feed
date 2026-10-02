@@ -157,3 +157,66 @@
 **Part 5 — Finish up**
 - [x] Full flow test (local + live), lint, build, audit
 - [x] README Day 4 section, `week5/Day4` snapshot, push
+
+---
+
+## Week 5 · Day 5 — Notifications, Testing, Optimization & Final Integration
+
+**Goal:** A new user can Register → Login → Create Profile → Discover Users → Follow Users → Create Posts → View Personalized Feed → Like Posts → Comment → Receive Notifications → Manage Profile → Interact With Other Users → Logout, with the whole app tested, polished and ready for submission.
+
+### Today's plan
+
+**Part 1 — Notifications model**
+- [x] `Notification` model: `recipient`, `actor`, `type` (`LIKE`/`COMMENT`/`FOLLOW`), `post` (optional), `comment` (optional), `isRead`, timestamps
+- [x] Indexes for "my notifications, newest first" and unread-count queries
+
+**Part 2 — Generate notifications**
+- [x] Create a notification on like, comment, and follow
+- [x] Skip it when the actor is the recipient (liking/commenting on your own post, or the self-follow case, which is already blocked)
+
+**Part 3 — Notifications API**
+- [x] `GET /api/notifications` — mine only, newest first, paginated, with actor info, type, related post/comment, and `isRead`
+- [x] `PATCH /api/notifications/:id/read`
+- [x] `PATCH /api/notifications/read-all`
+- [x] Postman collection updated (including the "no notification for your own action" cases)
+
+**Part 4 — Notifications UI**
+- [x] Notification bell in the navbar with an unread-count badge
+- [x] Notifications page/dropdown: actor avatar + name, message, type, related post link, time, read/unread style
+- [x] Mark one as read (on click/open) and "Mark all as read"; badge count updates right away
+
+**Bonus — Private accounts & follow requests (Instagram style)**
+- [x] `isPrivate` on User + toggle in Edit profile; going public accepts everyone waiting
+- [x] `FollowRequest` model (kept apart from `Follow`, so Follow only holds accepted follows)
+- [x] Follow on a private account sends a request; unfollow cancels it
+- [x] `GET /api/follow-requests`, `POST /api/follow-requests/:userId/accept`, `DELETE /api/follow-requests/:userId`
+- [x] New notification types `FOLLOW_REQUEST` (with Confirm / Delete) and `FOLLOW_ACCEPTED`
+- [x] Privacy: posts, single post, comments, likes, followers/following lists and the global feed are locked for non-followers (403)
+- [x] Follow button: Follow / Requested / Following; private profile shows a lock notice
+- [x] Tested: backend 48/48, browser 23/23 (desktop + 375px), and by hand on Razi Allah (3 real requests, Confirm/Delete)
+
+**Part 5 — Post search**
+- [x] `GET /api/posts?search=keyword` — search by post content (case-insensitive, regex-escaped, max 100 chars, same privacy + pagination as the feed). Author-name search not added: the People tab already covers it
+- [x] Frontend: Search page has People | Posts tabs (`?q=&type=posts`), results use `FeedList` (Load more, like, comment) with an empty-results state
+
+**Part 6 — Security & error-handling review**
+- [x] Re-check every ownership rule from the spec (posts, comments, profile, likes, follows — self-follow, duplicate follow, duplicate like) against the current code (probe script, 30/30, incl. 10 parallel likes/follows)
+- [x] Re-check: passwords hashed, secrets only in env vars, no sensitive fields in responses, validation on every write route
+- [x] Confirm error responses are consistent (`400/401/403/404/409/500`, always `{ success: false, message }`) and the frontend shows friendly messages, not raw API errors (network error + first validation error now shown)
+
+**Part 7 — Performance pass**
+- [x] Check indexes (including the new `Notification` ones) and look for any N+1 pattern, especially around notifications and feed (`explain()` found 4 collection scans / in-memory sorts → indexes added on Post, Follow, User, Notification; no N+1)
+- [x] Confirm pagination and field selection are used everywhere large lists are returned
+
+**Part 8 — UI/UX & responsive polish**
+- [x] Walk through every page on desktop, tablet and mobile widths (11 pages × 375/768/1280, 0 overflow)
+- [x] Clear any console errors/warnings; check loading, empty and error states everywhere (including the new notifications UI); added a 404 page
+
+**Part 9 — Full testing**
+- [x] Re-run the full flow from the spec, end to end, local + live (auth, posts, likes, comments, follow, notifications, search)
+- [x] Postman: add notifications + post-search requests, full collection run with 0 failures (local and live) — 3 new folders, 236 requests / 338 assertions
+
+**Part 10 — Deployment prep & docs**
+- [x] Re-verify production env vars, CORS, DB connection, frontend/backend builds on both Vercel projects (no new env vars; `/api` proxy keeps it same-origin)
+- [x] README: notifications + post-search sections, updated API table and project structure, Day 5 write-up
+- [x] `week5/Day5` snapshot, push

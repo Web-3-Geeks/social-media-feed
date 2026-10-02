@@ -5022,6 +5022,2741 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Post Search",
+      "description": "Searching post text with `GET /posts?search=`.",
+      "item": [
+        {
+          "name": "Create Searchable Post",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"searchWord\", `zebra${Date.now()}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"searchPostId\", pm.response.json().post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Postman post search test {{searchWord}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a post with a unique word (`searchWord`) so the searches below have exactly one match."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts - Finds Match",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const posts = pm.response.json().posts;",
+                  "pm.test(\"Exactly the new post is found\", () => {",
+                  "  pm.expect(posts).to.have.lengthOf(1);",
+                  "  pm.expect(posts[0].id).to.eql(pm.collectionVariables.get(\"searchPostId\"));",
+                  "});",
+                  "pm.test(\"Results still carry likedByMe\", () => pm.expect(posts[0]).to.have.property(\"likedByMe\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?search={{searchWord}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{searchWord}}"
+                }
+              ]
+            },
+            "description": "`GET /posts?search=` reuses the feed endpoint. It matches post text with a case-insensitive regex and keeps the same privacy rules and cursor pagination."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts - Case Insensitive",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"searchUpper\", pm.collectionVariables.get(\"searchWord\").toUpperCase());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Upper-case search finds the post\", () => pm.expect(pm.response.json().posts).to.have.lengthOf(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?search={{searchUpper}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{searchUpper}}"
+                }
+              ]
+            },
+            "description": "Same word in upper case still matches."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts - Regex Characters Are Literal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"\\\".*\\\" is not treated as a pattern\", () => pm.expect(pm.response.json().posts).to.have.lengthOf(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?search=.*{{searchWord}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": ".*{{searchWord}}"
+                }
+              ]
+            },
+            "description": "The search text is escaped before it goes into `$regex`, so `.*` only matches a literal \".*\". This stops regex injection and slow patterns."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts - No Results",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Empty list, not an error\", () => {",
+                  "  pm.expect(pm.response.json().posts).to.have.lengthOf(0);",
+                  "  pm.expect(pm.response.json().pagination.hasMore).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?search=nothing{{searchWord}}matches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "nothing{{searchWord}}matches"
+                }
+              ]
+            },
+            "description": "No match returns an empty list with `200`."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts - Page Mode",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Total counts only matching posts\", () => pm.expect(pm.response.json().pagination.total).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?search={{searchWord}}&page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{searchWord}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Search also works with `?page=`, and `total` counts only the matches."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts - Too Long - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Error is on search\", () => pm.expect(pm.response.json().errors).to.have.property(\"search\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?search=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              ]
+            },
+            "description": "**Expected (400)**: search text is limited to 100 characters."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Searchable Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{searchPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{searchPostId}}"
+              ]
+            },
+            "description": "Cleans up the search post."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Posts - Deleted Post Gone",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Deleted post no longer found\", () => pm.expect(pm.response.json().posts).to.have.lengthOf(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?search={{searchWord}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{searchWord}}"
+                }
+              ]
+            },
+            "description": "After deleting, the post is no longer in the results."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "description": "Like, comment and follow notifications: list, unread count, mark read.",
+      "item": [
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the second user (from **Posts - Ownership**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Other User Id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"otherUserId\", pm.response.json().user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Saves the second user's id in `otherUserId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark All Read (Clean Start)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Unread is 0\", () => pm.expect(pm.response.json().unreadCount).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "Starts this folder with no unread notifications."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"notifPostId\", pm.response.json().post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"A post for the notifications tests\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Saves its id in `notifPostId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the main user."
+          },
+          "response": []
+        },
+        {
+          "name": "Like Other User's Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{notifPostId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{notifPostId}}",
+                "like"
+              ]
+            },
+            "description": "Creates a `LIKE` notification for the post's author."
+          },
+          "response": []
+        },
+        {
+          "name": "Comment on Other User's Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{notifPostId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{notifPostId}}",
+                "comments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Nice post!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Creates a `COMMENT` notification for the post's author."
+          },
+          "response": []
+        },
+        {
+          "name": "Unfollow Other User (Reset)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "Makes sure the follow below is a fresh one."
+          },
+          "response": []
+        },
+        {
+          "name": "Follow Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Now following\", () => pm.expect(pm.response.json().following).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "Creates a `FOLLOW` notification."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the second user (from **Posts - Ownership**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Notifications",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const mainId = pm.collectionVariables.get(\"mainUserId\");",
+                  "const fromMain = body.notifications.filter((n) => n.actor && n.actor.id === mainId);",
+                  "const types = fromMain.map((n) => n.type);",
+                  "pm.test(\"LIKE, COMMENT and FOLLOW from the main user\", () => {",
+                  "  pm.expect(types).to.include.members([\"LIKE\", \"COMMENT\", \"FOLLOW\"]);",
+                  "});",
+                  "pm.test(\"Newest first\", () => {",
+                  "  const times = body.notifications.map((n) => new Date(n.createdAt).getTime());",
+                  "  pm.expect(times).to.eql([...times].sort((a, b) => b - a));",
+                  "});",
+                  "pm.test(\"Actor shows only name and avatar (no email)\", () => {",
+                  "  pm.expect(fromMain[0].actor).to.not.have.property(\"email\");",
+                  "});",
+                  "pm.test(\"unreadCount is at least 3\", () => pm.expect(body.unreadCount).to.be.at.least(3));",
+                  "const like = fromMain.find((n) => n.type === \"LIKE\");",
+                  "pm.test(\"LIKE points at the post\", () => pm.expect(like.post.id).to.eql(pm.collectionVariables.get(\"notifPostId\")));",
+                  "pm.collectionVariables.set(\"notificationId\", like.id);",
+                  "pm.collectionVariables.set(\"unreadBefore\", body.unreadCount);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ]
+            },
+            "description": "🔒 Lists my notifications, newest first, with the actor (name, avatar) and a short look at the post/comment. Saves the LIKE notification's id in `notificationId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Unread Count",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Matches the list\", () => pm.expect(pm.response.json().unreadCount).to.eql(Number(pm.collectionVariables.get(\"unreadBefore\"))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "unread-count"
+              ]
+            },
+            "description": "🔒 Just the number, for the badge on the bell icon."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark One as Read",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Marked read and count drops by 1\", () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.isRead).to.eql(true);",
+                  "  pm.expect(body.unreadCount).to.eql(Number(pm.collectionVariables.get(\"unreadBefore\")) - 1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "description": "🔒 Marks one notification as read and returns the new unread count."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark as Read - Invalid Id - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/not-an-id/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "not-an-id",
+                "read"
+              ]
+            },
+            "description": "**Expected (400)**: the id must be a valid ObjectId."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark as Read - Unknown Id - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Message is 'Notification not found'\", () => pm.expect(pm.response.json().message).to.eql(\"Notification not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/000000000000000000000000/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "000000000000000000000000",
+                "read"
+              ]
+            },
+            "description": "**Expected (404)**"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Notifications - Pagination Limit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"One item and more to load\", () => {",
+                  "  pm.expect(pm.response.json().notifications).to.have.lengthOf(1);",
+                  "  pm.expect(pm.response.json().pagination.hasMore).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Same cursor pagination as the feed (`limit`, `before` + `beforeId`)."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark All as Read",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Unread is 0\", () => pm.expect(pm.response.json().unreadCount).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "🔒 Marks everything as read."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Unread Count - After Read All",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Unread is 0\", () => pm.expect(pm.response.json().unreadCount).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "unread-count"
+              ]
+            },
+            "description": "Badge is cleared."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the main user."
+          },
+          "response": []
+        },
+        {
+          "name": "Main User Has No Self Notifications",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const mainId = pm.collectionVariables.get(\"mainUserId\");",
+                  "const fromMain = body.notifications.filter((n) => n.actor && n.actor.id === mainId);",
+                  "const types = fromMain.map((n) => n.type);",
+                  "pm.test(\"Nobody is notified about their own actions\", () => pm.expect(fromMain).to.have.lengthOf(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Liking, commenting or following never notifies yourself."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Someone Else's Notification - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Message is 'Notification not found'\", () => pm.expect(pm.response.json().message).to.eql(\"Notification not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "description": "**Expected (404)**: the query also filters by recipient, so you can't even tell that someone else's notification exists."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Logs out to check the route is protected."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Notifications Without Auth - Unauthorized",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ]
+            },
+            "description": "**Expected (401)**"
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the main user."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Follow Requests & Private Accounts",
+      "description": "Private accounts, sending/cancelling requests, accept and decline. Ends logged in as the main user with the second user public again.",
+      "item": [
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the second user (from **Posts - Ownership**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Make Account Private",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"isPrivate is true\", () => pm.expect(pm.response.json().user.isPrivate).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isPrivate\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Turns on private mode. New followers now need approval and only followers see the posts."
+          },
+          "response": []
+        },
+        {
+          "name": "Make Account Private - Invalid Value - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Error is on isPrivate\", () => pm.expect(pm.response.json().errors).to.have.property(\"isPrivate\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isPrivate\": \"yes\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Expected (400)**: must be `true` or `false`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Post as Private User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"privatePostId\", pm.response.json().post.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Only my followers can see this\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Saves its id in `privatePostId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the main user."
+          },
+          "response": []
+        },
+        {
+          "name": "Unfollow Private User (Reset)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "Main user is now a non-follower."
+          },
+          "response": []
+        },
+        {
+          "name": "Private Profile Header Still Visible",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const user = pm.response.json().user;",
+                  "pm.test(\"Header shows isPrivate and follow state\", () => {",
+                  "  pm.expect(user.isPrivate).to.eql(true);",
+                  "  pm.expect(user.isFollowing).to.eql(false);",
+                  "  pm.expect(user.isRequested).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}"
+              ]
+            },
+            "description": "Like Instagram: name, bio and counts are public. Only posts and lists are locked."
+          },
+          "response": []
+        },
+        {
+          "name": "Private User's Posts - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Message is 'This account is private'\", () => pm.expect(pm.response.json().message).to.eql(\"This account is private\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "posts"
+              ]
+            },
+            "description": "**Expected (403)**: `This account is private`"
+          },
+          "response": []
+        },
+        {
+          "name": "Private User's Single Post - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Message is 'This account is private'\", () => pm.expect(pm.response.json().message).to.eql(\"This account is private\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{privatePostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{privatePostId}}"
+              ]
+            },
+            "description": "**Expected (403)**: a direct link doesn't get around privacy."
+          },
+          "response": []
+        },
+        {
+          "name": "Like Private User's Post - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Message is 'This account is private'\", () => pm.expect(pm.response.json().message).to.eql(\"This account is private\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{privatePostId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{privatePostId}}",
+                "like"
+              ]
+            },
+            "description": "**Expected (403)**"
+          },
+          "response": []
+        },
+        {
+          "name": "Private User's Followers - Forbidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"Message is 'This account is private'\", () => pm.expect(pm.response.json().message).to.eql(\"This account is private\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/followers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "followers"
+              ]
+            },
+            "description": "**Expected (403)**: the lists are locked too."
+          },
+          "response": []
+        },
+        {
+          "name": "Global Feed Hides Private Posts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const authorId = (p) => (p.author && (p.author.id || p.author._id)) || p.author;",
+                  "pm.test(\"No posts from the private user\", () => {",
+                  "  const ids = pm.response.json().posts.map(authorId);",
+                  "  pm.expect(ids).to.not.include(pm.collectionVariables.get(\"otherUserId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "The global feed and search skip private accounts you don't follow."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Follow Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Requested, not following yet\", () => {",
+                  "  pm.expect(pm.response.json().requested).to.eql(true);",
+                  "  pm.expect(pm.response.json().following).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "🔒 Following a private account sends a request instead."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Follow Request Again - Idempotent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Still just requested\", () => pm.expect(pm.response.json().requested).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "A second click doesn't make a second request (unique index on from + to)."
+          },
+          "response": []
+        },
+        {
+          "name": "Profile Shows Requested",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"isRequested is true\", () => pm.expect(pm.response.json().user.isRequested).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}"
+              ]
+            },
+            "description": "The button shows **Requested**."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Follow Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Request cancelled\", () => pm.expect(pm.response.json().requested).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "Unfollow also cancels a pending request."
+          },
+          "response": []
+        },
+        {
+          "name": "Profile Shows Not Requested",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"isRequested is false\", () => pm.expect(pm.response.json().user.isRequested).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}"
+              ]
+            },
+            "description": "Back to **Follow**."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Follow Request (Again)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Requested\", () => pm.expect(pm.response.json().requested).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "Sends it again so the private user can accept it."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the second user (from **Posts - Ownership**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Follow Requests",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const mine = pm.response.json().requests.filter((r) => r.user.id === pm.collectionVariables.get(\"mainUserId\"));",
+                  "pm.test(\"Exactly one request from the main user\", () => pm.expect(mine).to.have.lengthOf(1));",
+                  "pm.test(\"No email in the request\", () => pm.expect(mine[0].user).to.not.have.property(\"email\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/follow-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "follow-requests"
+              ]
+            },
+            "description": "🔒 Requests sent to me, newest first, with cursor pagination."
+          },
+          "response": []
+        },
+        {
+          "name": "Notifications Show Follow Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const mainId = pm.collectionVariables.get(\"mainUserId\");",
+                  "const fromMain = body.notifications.filter((n) => n.actor && n.actor.id === mainId);",
+                  "const types = fromMain.map((n) => n.type);",
+                  "pm.test(\"FOLLOW_REQUEST from main user\", () => pm.expect(types).to.include(\"FOLLOW_REQUEST\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "The request also shows up as a notification."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Request - Unknown User - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Message is 'Follow request not found'\", () => pm.expect(pm.response.json().message).to.eql(\"Follow request not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/follow-requests/000000000000000000000000/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "follow-requests",
+                "000000000000000000000000",
+                "accept"
+              ]
+            },
+            "description": "**Expected (404)**"
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Follow Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Accepted with new follower count\", () => {",
+                  "  pm.expect(pm.response.json().message).to.eql(\"Follow request accepted\");",
+                  "  pm.expect(pm.response.json().followerCount).to.be.a(\"number\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/follow-requests/{{mainUserId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "follow-requests",
+                "{{mainUserId}}",
+                "accept"
+              ]
+            },
+            "description": "🔒 `:userId` is the person who sent the request. Creates the follow and notifies them."
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Same Request Again - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Message is 'Follow request not found'\", () => pm.expect(pm.response.json().message).to.eql(\"Follow request not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/follow-requests/{{mainUserId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "follow-requests",
+                "{{mainUserId}}",
+                "accept"
+              ]
+            },
+            "description": "**Expected (404)**: the request is gone once accepted."
+          },
+          "response": []
+        },
+        {
+          "name": "Request Notification Became Follow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const mainId = pm.collectionVariables.get(\"mainUserId\");",
+                  "const fromMain = body.notifications.filter((n) => n.actor && n.actor.id === mainId);",
+                  "const types = fromMain.map((n) => n.type);",
+                  "pm.test(\"Now a FOLLOW, no FOLLOW_REQUEST left\", () => {",
+                  "  pm.expect(types).to.include(\"FOLLOW\");",
+                  "  pm.expect(types).to.not.include(\"FOLLOW_REQUEST\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Accepting turns the request notification into a follow notification."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Feed Non-Target",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{feedNonTargetEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the third user (from **Posts - Ownership**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Follow Request as Third User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Requested\", () => pm.expect(pm.response.json().requested).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/follow",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "follow"
+              ]
+            },
+            "description": "A request the private user will decline."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the second user (from **Posts - Ownership**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Decline Follow Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Removed\", () => pm.expect(pm.response.json().message).to.eql(\"Follow request removed\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/follow-requests/{{feedNonTargetId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "follow-requests",
+                "{{feedNonTargetId}}"
+              ]
+            },
+            "description": "🔒 Deletes the request and its notification."
+          },
+          "response": []
+        },
+        {
+          "name": "Decline Same Request Again - Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"Message is 'Follow request not found'\", () => pm.expect(pm.response.json().message).to.eql(\"Follow request not found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/follow-requests/{{feedNonTargetId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "follow-requests",
+                "{{feedNonTargetId}}"
+              ]
+            },
+            "description": "**Expected (404)**"
+          },
+          "response": []
+        },
+        {
+          "name": "Decline Request - Invalid Id - Validation Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/follow-requests/not-an-id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "follow-requests",
+                "not-an-id"
+              ]
+            },
+            "description": "**Expected (400)**"
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the main user."
+          },
+          "response": []
+        },
+        {
+          "name": "Notified That Request Was Accepted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const accepted = pm.response.json().notifications.find((n) => n.type === \"FOLLOW_ACCEPTED\" && n.actor && n.actor.id === pm.collectionVariables.get(\"otherUserId\"));",
+                  "pm.test(\"FOLLOW_ACCEPTED from the private user\", () => pm.expect(accepted).to.exist);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "The person who sent the request gets a `FOLLOW_ACCEPTED` notification."
+          },
+          "response": []
+        },
+        {
+          "name": "Follower Can See Private Posts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Private post is visible now\", () => {",
+                  "  const ids = pm.response.json().posts.map((p) => p.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"privatePostId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{otherUserId}}/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{otherUserId}}",
+                "posts"
+              ]
+            },
+            "description": "Once accepted, the posts unlock."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Other User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the second user (from **Posts - Ownership**)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Private Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{privatePostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{privatePostId}}"
+              ]
+            },
+            "description": "Clean up."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Notifications Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/posts/{{notifPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "posts",
+                "{{notifPostId}}"
+              ]
+            },
+            "description": "Clean up the post from **Notifications**."
+          },
+          "response": []
+        },
+        {
+          "name": "Make Account Public",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"isPrivate is false\", () => pm.expect(pm.response.json().user.isPrivate).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isPrivate\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "🔒 Going public also accepts any requests still pending."
+          },
+          "response": []
+        },
+        {
+          "name": "Login as Main User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"mainEmail\", pm.collectionVariables.get(\"testEmail\") || \"test@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mainEmail}}\",\n  \"password\": \"password123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches to the main user."
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -5134,6 +7869,48 @@
     {
       "key": "mainFeedPostId",
       "value": ""
+    },
+    {
+      "key": "otherUserId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Notifications > Get Other User Id. The second user's id."
+    },
+    {
+      "key": "searchWord",
+      "value": "",
+      "type": "string",
+      "description": "Set by Post Search. A unique word so the search has exactly one match."
+    },
+    {
+      "key": "searchPostId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Post Search > Create Searchable Post."
+    },
+    {
+      "key": "notifPostId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Notifications > Create Post as Other User."
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Notifications > Get Notifications. The LIKE notification's id."
+    },
+    {
+      "key": "unreadBefore",
+      "value": "",
+      "type": "string",
+      "description": "Set by Notifications > Get Notifications. Unread count before marking one read."
+    },
+    {
+      "key": "privatePostId",
+      "value": "",
+      "type": "string",
+      "description": "Set by Follow Requests & Private Accounts > Create Post as Private User."
     }
   ]
 }

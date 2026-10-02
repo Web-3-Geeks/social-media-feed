@@ -28,26 +28,29 @@ social-media-feed/
 │       ├── server.js             # Local entry: connect DB, then app.listen
 │       ├── app.js                # Express app: middleware, routes, error handling
 │       ├── config/db.js          # Cached MongoDB connection
-│       ├── models/               # User, Post, Like, Comment, Follow
-│       ├── controllers/          # auth, user, follow, post, like, comment
-│       ├── routes/               # health, auth, user (incl. follow), post (incl. likes and comments), comment, feed
+│       ├── models/               # User, Post, Like, Comment, Follow, FollowRequest, Notification
+│       ├── controllers/          # auth, user, follow, followRequest, post, like, comment, notification
+│       ├── routes/               # health, auth, user (incl. follow), post (incl. likes and comments), comment, feed,
+│       │                         # notification, followRequest
 │       ├── middleware/           # auth (protect), validate, rateLimiters, notFound, errorHandler
-│       ├── validators/           # express-validator rules (auth, users, posts, comments)
-│       └── utils/                # AppError, generateToken, tokenCookie
+│       ├── validators/           # express-validator rules (auth, users, posts, comments, notifications, follow requests)
+│       └── utils/                # AppError, generateToken, tokenCookie, escapeRegex, notify (create/undo
+│                                 # notifications), followService (follow + accept), privacy (private-account checks)
 ├── frontend/
 │   ├── vercel.json               # SPA fallback + /api proxy to the backend
 │   └── src/
 │       ├── api/axios.js          # Axios instance (baseURL, withCredentials)
 │       ├── context/              # AuthContext + AuthProvider
 │       ├── hooks/                # useAuth, useFeed (feed state + pagination), useLike (optimistic likes),
-│       │                         # useFollow (optimistic follow)
+│       │                         # useFollow (optimistic follow/request), useUnreadCount (bell badge)
 │       ├── components/           # Route guards, layouts, Navbar, FormInput, Avatar, Logo,
 │       │                         # CreatePost, PostCard, LikeButton, CommentsSection, CommentItem, Icons,
-│       │                         # FeedList, PostGridTile, FollowButton, UserRow, EditProfileForm, UserListSkeleton
-│       ├── pages/                # Login, Register, Dashboard, UserProfile, Search, FollowList,
-│       │                         # Profile (redirects to your own /users/:id)
+│       │                         # FeedList, PostGridTile, FollowButton, UserRow, EditProfileForm, UserListSkeleton,
+│       │                         # NotificationItem
+│       ├── pages/                # Login, Register, Dashboard, UserProfile, Search (people + posts), FollowList,
+│       │                         # Notifications, NotFound, Profile (redirects to your own /users/:id)
 │       └── utils/                # validation (forms, posts, profile), time (relative timestamps),
-│                                 # followEvents (keeps follow buttons in sync)
+│                                 # followEvents (keeps follow buttons in sync), notificationEvents (badge sync)
 └── week5/                        # Per-day snapshots for evaluation (see week5/README.md)
 ```
 
@@ -110,20 +113,28 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 | POST | `/api/auth/logout` | – | Clear the auth cookie |
 | GET | `/api/auth/me` | 🔒 | Current session user |
 | GET | `/api/users/me` | 🔒 | Current user's profile |
-| PATCH | `/api/users/me` | 🔒 | Edit your `name`, `bio` and/or `avatar` |
-| GET | `/api/users?search=<name>&page=1&limit=10` | 🔒 | Search users by name (excludes you), with `isFollowing` |
-| GET | `/api/users/:id` | 🔒 | Public profile with post, follower and following counts and `isFollowing` |
-| GET | `/api/users/:id/posts?limit=10` | 🔒 | One user's posts, newest first (`before` + `beforeId` for more) |
-| POST | `/api/users/:id/follow` | 🔒 | Follow a user → updated counts (safe to repeat) |
-| DELETE | `/api/users/:id/follow` | 🔒 | Unfollow a user → updated counts (safe to repeat) |
-| GET | `/api/users/:id/followers?limit=20` | 🔒 | Who follows this user (`before` + `beforeId` for more) |
-| GET | `/api/users/:id/following?limit=20` | 🔒 | Who this user follows (`before` + `beforeId` for more) |
+| PATCH | `/api/users/me` | 🔒 | Edit your `name`, `bio`, `avatar` and/or `isPrivate` |
+| GET | `/api/users?search=<name>&page=1&limit=10` | 🔒 | Search users by name (excludes you), with `isFollowing` and `isRequested` |
+| GET | `/api/users/:id` | 🔒 | Profile header with counts, `isPrivate`, `isFollowing` and `isRequested` (visible even for private accounts) |
+| GET | `/api/users/:id/posts?limit=10` | 🔒 🔐 | One user's posts, newest first (`before` + `beforeId` for more) |
+| POST | `/api/users/:id/follow` | 🔒 | Follow a user, or send a request if the account is private → `{ following, requested, followerCount }` (safe to repeat) |
+| DELETE | `/api/users/:id/follow` | 🔒 | Unfollow, or cancel a pending request (safe to repeat) |
+| GET | `/api/users/:id/followers?limit=20` | 🔒 🔐 | Who follows this user (`before` + `beforeId` for more) |
+| GET | `/api/users/:id/following?limit=20` | 🔒 🔐 | Who this user follows (`before` + `beforeId` for more) |
+| GET | `/api/follow-requests?limit=20` | 🔒 | Requests sent to me, newest first (cursor) |
+| POST | `/api/follow-requests/:userId/accept` | 🔒 | Accept the request from `:userId` → follow created, they get `FOLLOW_ACCEPTED` |
+| DELETE | `/api/follow-requests/:userId` | 🔒 | Decline the request from `:userId` |
+| GET | `/api/notifications?limit=20` | 🔒 | My notifications, newest first, with actor, post/comment preview, `isRead` and `unreadCount` (cursor) |
+| GET | `/api/notifications/unread-count` | 🔒 | `{ unreadCount }` for the bell badge |
+| PATCH | `/api/notifications/:id/read` | 🔒 owner | Mark one as read → new `unreadCount` |
+| PATCH | `/api/notifications/read-all` | 🔒 | Mark all as read |
 | GET | `/api/feed?limit=10` | 🔒 | Personalized feed: your posts + posts from people you follow. Same as `/api/posts/feed`. |
 | POST | `/api/posts` | 🔒 | Create a post (`201`) |
-| GET | `/api/posts?limit=10` | 🔒 | Feed, newest first (cursor mode, the default) |
+| GET | `/api/posts?limit=10` | 🔒 | Global feed, newest first (cursor mode, the default). Skips private accounts you don't follow. |
+| GET | `/api/posts?search=<text>&limit=10` | 🔒 | Search posts by text (case-insensitive, max 100 chars). Works with both cursor and page mode. |
 | GET | `/api/posts?before=<createdAt>&beforeId=<id>&limit=10` | 🔒 | Next page of the feed (Load more) |
 | GET | `/api/posts?page=1&limit=10` | 🔒 | Feed in page mode, as in the task spec |
-| GET | `/api/posts/:id` | 🔒 | Single post |
+| GET | `/api/posts/:id` | 🔒 🔐 | Single post |
 | PATCH | `/api/posts/:id` | 🔒 owner | Update `content` and/or `imageUrl` |
 | DELETE | `/api/posts/:id` | 🔒 owner | Delete a post (and its likes and comments) |
 | POST | `/api/posts/:id/like` | 🔒 | Like a post → `{ likeCount, likedByMe }` |
@@ -133,9 +144,11 @@ Base URL: `/api`. Every response is JSON. Errors always use this shape:
 | PATCH | `/api/comments/:id` | 🔒 owner | Edit a comment |
 | DELETE | `/api/comments/:id` | 🔒 owner | Delete a comment |
 
-**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's or comment's owner, or following yourself · `404` unknown route, user, post, or comment · `409` email already registered · `429` too many login or sign-up attempts.
+🔐 = locked to followers when the owner's account is private (`403 This account is private`). The post's likes and comments follow the same rule.
 
-**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** and **Comments - Ownership** folders use a second user to prove the `403` cases. A full run sends 164 requests with 216 assertions, all passing. From the command line: `npx newman run postman-collection.json --env-var baseUrl=https://social-feed-api.vercel.app/api` (run inside `backend/`).
+**Status codes:** `400` validation or bad JSON · `401` not authenticated, invalid or expired token, wrong credentials · `403` not the post's or comment's owner, following yourself, or a private account you don't follow · `404` unknown route, user, post, comment, notification or follow request · `409` email already registered · `429` too many login or sign-up attempts.
+
+**Postman:** import [`backend/postman-collection.json`](backend/postman-collection.json). Set the `baseUrl` variable to the local or live API and click **Run collection**. Every request has tests. Register generates a fresh email each run so the collection can be re-run, and the **Posts - Ownership** and **Comments - Ownership** folders use a second user to prove the `403` cases. The **Post Search**, **Notifications** and **Follow Requests & Private Accounts** folders (Day 5) use the same users. A full run sends 236 requests with 338 assertions, all passing. From the command line: `npx newman run postman-collection.json --env-var baseUrl=https://social-feed-api.vercel.app/api` (run inside `backend/`).
 
 ---
 
@@ -311,7 +324,7 @@ A review of the Day 1 and Day 2 code found no critical issues: no NoSQL injectio
 
 ### Key decisions and why
 
-**Direct follow, no follow requests.** The task describes a public follow: follow → counts update. Follow requests and accept/decline would need private accounts and a pending state, which the task doesn't ask for.
+**Direct follow, no follow requests.** The task describes a public follow: follow → counts update. Follow requests and accept/decline would need private accounts and a pending state, which the task doesn't ask for. (Both were added later as a Day 5 bonus. Public accounts still work exactly like this.)
 
 **Follows are race-safe and counters change atomically.** Same approach as likes: one `updateOne` with `upsert`, and the counts only change with `$inc` when a follow was actually inserted (`upsertedCount === 1`) or removed (`deletedCount === 1`). A duplicate-key error from a parallel request counts as "already following". Following twice or unfollowing twice never changes the counts twice.
 
@@ -334,6 +347,87 @@ A review of the Day 1 and Day 2 code found no critical issues: no NoSQL injectio
 - Login rejects a non-string password with a clean `400`.
 - One account had a stale `postCount` from posts created before the counter existed. It was recomputed from the real posts.
 - The Postman auto-login scripts read `baseUrl` with `pm.variables` instead of `pm.collectionVariables`, so a run against the live API logs in to the live API, not localhost.
+
+---
+
+## Day 5 — Notifications, post search, testing and final polish
+
+**Goal:** the full flow works end to end: Register → Login → profile → discover and follow users → post → personalized feed → like → comment → **receive notifications** → manage profile → logout. The app is tested, optimized and ready for submission.
+
+### What was built
+
+**Backend**
+- `Notification` model: `recipient`, `actor`, `type` (`LIKE`, `COMMENT`, `FOLLOW`, plus `FOLLOW_REQUEST` and `FOLLOW_ACCEPTED`), an optional `post` and `comment`, `isRead`, and `createdAt`.
+- Notifications are created on like, comment and follow, but never for your own action (liking or commenting on your own post).
+- Undoing an action removes its notification: unlike, unfollow, cancelling a request, deleting a comment. Deleting a post removes all of its notifications.
+- Notifications API: list (newest first, cursor-paginated, with the actor's name and avatar and a short preview of the post or comment), unread count, mark one as read, mark all as read. You can only see or change your own notifications.
+- **Post search:** `GET /api/posts?search=` searches post text, case-insensitive, on the same endpoint as the feed. It keeps the same privacy rules and pagination.
+- **Bonus — private accounts and follow requests (Instagram style):**
+  - `isPrivate` on `User`.
+  - A `FollowRequest` model.
+  - Following a private account sends a request, which the owner can accept or decline.
+  - A non-follower gets `403` for the account's posts, single posts, likes, comments, and followers/following lists. The global feed and post search skip that account's posts.
+  - Switching back to public accepts everyone still waiting.
+- The Postman collection has three new folders: **Post Search**, **Notifications**, and **Follow Requests & Private Accounts**.
+
+**Frontend**
+- **Bell in the navbar** with an unread badge (shows `9+` above 9). It refreshes on every page change, every minute while the tab is visible, and when you come back to the tab.
+- **Notifications page `/notifications`:**
+  - Each row shows the actor's avatar with a small type icon, a message ("liked your post", "commented: …"), the time, and an unread dot and tint.
+  - Clicking a row marks it read. Follow-type rows open the person's profile. Like and comment rows open your profile, where the post is (there's no single-post page yet).
+  - **Mark all as read** button. The badge updates right away.
+  - Follow requests show **Confirm** and **Delete** in the row.
+- **Search page** now has **People | Posts** tabs. The tab and the query stay in the URL (`?q=&type=posts`). Post results use the same `FeedList` as the feed (like, comment, Load more), with an empty state when nothing matches.
+- **Private accounts:**
+  - A toggle in Edit profile.
+  - The follow button shows **Follow**, **Requested** or **Following**. Leaving a private account asks for confirmation first.
+  - A non-follower sees a lock notice instead of the posts.
+- **404 page** for unknown URLs, instead of silently redirecting home.
+- **Friendlier errors:** a network failure says "Can't reach the server…", and a validation error shows the first field's message instead of "Validation failed".
+
+### Key decisions and why
+
+**Notifications never break the action they come from.** `notify()` and `unnotify()` catch their own errors. A like that worked must not return `500` just because its notification failed to save, so a failed notification is logged and skipped.
+
+**Undo removes the notification.** Like → unlike → like again would otherwise leave two "liked your post" rows. Removing on undo keeps one notification per real action, the same way Instagram does it.
+
+**Unread count comes from the server, not from the list.** The list is paginated, so counting unread items on the client would be wrong whenever there are more than one page. Every write (mark one, mark all, accept, decline) returns the new `unreadCount`. The page passes it to the navbar badge through a small window event, without an extra request.
+
+**Polling, not WebSockets.** Vercel runs the API as serverless functions, which can't hold a socket open. A cheap `unread-count` request on navigation, every 60 seconds and on tab focus is enough for this app. It pauses while the tab is hidden.
+
+**Someone else's notification is a `404`, not a `403`.** Mark-as-read filters by `_id` **and** `recipient` in one query. A `403` would confirm that the id exists.
+
+**Post search reuses the feed endpoint.** `?search=` adds one condition on top of the feed's existing filter, so privacy, `likedByMe`, cursor pagination and page mode all keep working with no new code paths. The text is regex-escaped (as in user search) and limited to 100 characters. Searching by author name was not added, because the People tab already covers it.
+
+**Follow requests are a separate collection.** `Follow` only ever holds accepted follows, so the feed, follower counts and lists didn't need to change. Accept deletes the request **first**, then creates the follow. If two accepts run at the same time, only one deletes the request, so only one follow is created.
+
+**Private profile headers stay visible.** Like Instagram, anyone can see the name, bio and counts, so they know who they're requesting. Only the content is locked, checked in one helper (`assertCanViewUser`).
+
+### Review and testing (Parts 6–9)
+
+**Security review.** Re-checked every ownership rule from the spec with a probe script (30 checks):
+- Edit/delete on posts and comments, self-follow, duplicate follows and likes under 10 parallel requests.
+- NoSQL injection in login and search, mass assignment, `413` on oversized bodies.
+- Every error uses `{ success: false, message }`. No password hash or email appears in any response, and the live API shows no stack traces.
+
+**Performance.** Ran `explain()` on every frequent query. Four were scanning the whole collection or sorting in memory, so indexes were added:
+
+| Query | Index added |
+|---|---|
+| A profile's posts / the following feed (filter by author, newest first) | `Post { author, createdAt, _id }` (replaces the single `author` index) |
+| Followers / following lists, newest first | `Follow { following, createdAt, _id }` and `{ follower, createdAt, _id }` |
+| Private accounts to hide from the global feed | Partial index `User { isPrivate }` for private users only, so it stays tiny |
+| Removing notifications when a post or comment is deleted | Sparse `Notification { post }` and `{ comment }` |
+
+All frequent queries now use an index scan. Lists always use pagination and `select`/`populate` with only the fields shown. `likedByMe`, `isFollowing` and `isRequested` are computed with one query per page, not one per item, so there are no N+1 queries.
+
+**UI walk-through.** A browser script opened all 11 pages at 375px, 768px and 1280px and checked each one for horizontal overflow and console errors or warnings. It found 0 of each. Long search terms in empty states now wrap.
+
+**Tests run:**
+- Postman: 236 requests, 338 assertions, 0 failures.
+- Notifications script, private-accounts script (48 checks) and search script (19 checks): all passing.
+- Browser tests for search and private accounts (desktop and 375px): all passing.
+- `npm run lint` and `npm run build` are clean.
 
 ---
 
@@ -378,6 +472,7 @@ Locally, `VITE_API_URL` points straight at `http://localhost:5000/api`. `localho
 - **The rate limiter uses in-memory storage.** On Vercel each serverless instance keeps its own counters, so the limit applies per instance. A shared store such as Redis would make it global.
 - **No email verification.** Registration therefore reveals whether an email is already in use.
 - **Avatars are URLs, not uploads.** Users paste a direct `https://` image link. File upload would need storage such as Cloudinary or S3.
-- **All accounts are public.** Anyone logged in can follow anyone. There are no private accounts or follow requests (see Day 4).
+- **Notifications are not real-time.** The badge refreshes on navigation, every 60 seconds and on tab focus. Instant updates would need WebSockets or a push service, which Vercel's serverless functions can't host.
+- **Post search is a regex scan.** Fine at this size, but an unanchored regex can't use an index on `content`. A MongoDB text index or Atlas Search would be the next step for large data and relevance ranking.
 - **Relative timestamps** ("5 minutes ago") only update on re-render or refresh.
 - **Relationships are cleaned up only for post deletion.** Deleting a user account (not implemented yet) would also need to remove that user's posts, likes, comments, and follows, and fix the other users' counts.
