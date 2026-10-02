@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { BrowserRouter, Route, Routes } from "react-router";
 import GuestRoute from "./components/GuestRoute";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
@@ -9,6 +9,8 @@ import Search from "./pages/Search";
 import UserProfile from "./pages/UserProfile";
 import FollowList from "./pages/FollowList";
 import AppLayout from "./components/AppLayout";
+import Notifications from "./pages/Notifications";
+import NotFound from "./pages/NotFound";
 
 function App() {
   return (
@@ -24,13 +26,20 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/search" element={<Search />} />
+            <Route path="/notifications" element={<Notifications />} />
             <Route path="/users/:id" element={<UserProfile />} />
-            <Route path="/users/:id/followers" element={<FollowList type="followers" />} />
-            <Route path="/users/:id/following" element={<FollowList type="following" />} />
+            <Route
+              path="/users/:id/followers"
+              element={<FollowList type="followers" />}
+            />
+            <Route
+              path="/users/:id/following"
+              element={<FollowList type="following" />}
+            />
+            {/* Logged-out visitors are sent to /login by ProtectedRoute first. */}
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Route>
-
-        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

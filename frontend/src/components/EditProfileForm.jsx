@@ -8,6 +8,7 @@ export default function EditProfileForm({ profile, onSaved, onCancel }) {
     name: profile.name,
     bio: profile.bio || "",
     avatar: profile.avatar || "",
+    isPrivate: Boolean(profile.isPrivate),
   });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState("");
@@ -35,6 +36,7 @@ export default function EditProfileForm({ profile, onSaved, onCancel }) {
         name: form.name.trim(),
         bio: form.bio.trim(),
         avatar: form.avatar.trim(),
+        isPrivate: form.isPrivate,
       });
       onSaved(res.data.user);
     } catch (error) {
@@ -116,6 +118,30 @@ export default function EditProfileForm({ profile, onSaved, onCancel }) {
         error={errors.avatar}
         placeholder="https://example.com/me.jpg"
       />
+
+      {/* A real checkbox under the hood, so keyboard and screen readers just work. */}
+      <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 px-3.5 py-3">
+        <span>
+          <span className="block text-sm font-medium text-gray-700">Private account</span>
+          <span id="profile-private-help" className="mt-0.5 block text-xs text-gray-500">
+            {form.isPrivate
+              ? "People must send a request, and only approved followers see your posts."
+              : "Anyone can follow you and see your posts."}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          name="isPrivate"
+          checked={form.isPrivate}
+          onChange={(e) => setForm((prev) => ({ ...prev, isPrivate: e.target.checked }))}
+          aria-describedby="profile-private-help"
+          className="peer sr-only"
+        />
+        <span
+          aria-hidden="true"
+          className="relative mt-0.5 h-6 w-11 shrink-0 rounded-full bg-gray-200 transition peer-checked:bg-blue-500 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-300 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-5"
+        />
+      </label>
 
       <div className="flex justify-end gap-2">
         <button

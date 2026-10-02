@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import { useAuth } from "../hooks/useAuth";
 import Avatar from "./Avatar";
 import FollowButton from "./FollowButton";
+import { LockIcon } from "./Icons";
 
 export default function UserRow({ user }) {
   const { user: me } = useAuth();
@@ -20,6 +21,12 @@ export default function UserRow({ user }) {
           >
             {user.name}
           </Link>
+          {user.isPrivate && (
+            <span title="Private account" className="shrink-0 text-gray-400">
+              <LockIcon size={14} />
+              <span className="sr-only">Private account</span>
+            </span>
+          )}
           {isMe && (
             <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
               You
@@ -29,7 +36,13 @@ export default function UserRow({ user }) {
         {user.bio && <p className="truncate text-sm text-gray-500">{user.bio}</p>}
       </div>
       {!isMe && (
-        <FollowButton userId={user.id} initialFollowing={user.isFollowing} name={user.name} />
+        <FollowButton
+          userId={user.id}
+          initialFollowing={user.isFollowing}
+          initialRequested={user.isRequested}
+          isPrivate={user.isPrivate}
+          name={user.name}
+        />
       )}
     </li>
   );

@@ -1,55 +1,116 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import api, { getErrorMessage } from "../api/axios";
+import FeedList from "../components/FeedList";
 import UserListSkeleton from "../components/UserListSkeleton";
 import UserRow from "../components/UserRow";
 
 const PAGE_SIZE = 10;
 
+// Same limits as the backend validators.
+const TABS = {
+  people: {
+    label: "People",
+    maxLength: 50,
+    placeholder: "Search by name...",
+    inputLabel: "Search users by name",
+    hint: "Search by name and follow people you like.",
+  },
+  posts: {
+    label: "Posts",
+    maxLength: 100,
+    placeholder: "Search posts...",
+    inputLabel: "Search posts by text",
+    hint: "Find posts that mention a word or phrase.",
+  },
+};
+
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = (searchParams.get("q") || "").trim();
+  // The tab lives in the URL too (?type=posts), so refresh and back keep it.
+  const type = searchParams.get("type") === "posts" ? "posts" : "people";
+  const tab = TABS[type];
   const [input, setInput] = useState(searchParams.get("q") || "");
 
   // Debounce: only update the URL (and search) 300ms after the user stops typing.
   useEffect(() => {
     const timer = setTimeout(() => {
-      const q = input.trim();
-      setSearchParams(q ? { q } : {}, { replace: true });
+      const q = input.trim().slice(0, TABS[type].maxLength);
+      const params = {};
+      if (q) params.q = q;
+      if (type === "posts") params.type = "posts";
+      setSearchParams(params, { replace: true });
     }, 300);
     return () => clearTimeout(timer);
-  }, [input, setSearchParams]);
+  }, [input, type, setSearchParams]);
+
+  const switchTab = (next) => {
+    if (next === type) return;
+    const q = input.trim().slice(0, TABS[next].maxLength);
+    const params = {};
+    if (q) params.q = q;
+    if (next === "posts") params.type = "posts";
+    setSearchParams(params, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Find people</h1>
-        <p className="mt-1 text-sm text-gray-500">Search by name and follow people you like.</p>
+        <h1 className="text-2xl font-bold text-gray-900">Search</h1>
+        <p className="mt-1 text-sm text-gray-500">{tab.hint}</p>
       </div>
 
-      <div role="search">
-        <label htmlFor="user-search" className="sr-only">
-          Search users by name
+      <div role="search" className="space-y-3">
+        <div role="group" aria-label="Search for" className="flex gap-1 rounded-xl bg-gray-100 p-1">
+          {Object.entries(TABS).map(([key, { label }]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => switchTab(key)}
+              aria-pressed={type === key}
+              className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                type === key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <label htmlFor="search-input" className="sr-only">
+          {tab.inputLabel}
         </label>
         <input
-          id="user-search"
+          id="search-input"
           type="search"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          maxLength={50}
+          maxLength={tab.maxLength}
           autoFocus
-          placeholder="Search by name..."
+          placeholder={tab.placeholder}
           className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
         />
       </div>
 
-      {query ? (
-        <SearchResults key={query} query={query} />
-      ) : (
+      {!query ? (
         <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center">
           <p className="font-medium text-gray-900">Start typing to search</p>
           <p className="mt-1 text-sm text-gray-500">Results show up as you type.</p>
         </div>
+      ) : type === "posts" ? (
+        // Same feed component as the dashboard, so likes, comments, edit/delete
+        // and "load more" all work in the results too.
+        <section aria-label={`Posts matching "${query}"`} className="space-y-4">
+          <FeedList
+            key={query}
+            endpoint={`/posts?search=${encodeURIComponent(query)}`}
+            emptyTitle="No posts found"
+            emptyMessage={`No posts mention "${query}". Try a different word.`}
+          />
+        </section>
+      ) : (
+        <SearchResults key={query} query={query} />
       )}
     </div>
   );

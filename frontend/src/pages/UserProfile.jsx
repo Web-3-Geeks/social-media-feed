@@ -5,7 +5,7 @@ import Avatar from "../components/Avatar";
 import EditProfileForm from "../components/EditProfileForm";
 import FeedList from "../components/FeedList";
 import FollowButton from "../components/FollowButton";
-import { GridIcon, ListIcon } from "../components/Icons";
+import { GridIcon, ListIcon, LockIcon } from "../components/Icons";
 import { useAuth } from "../hooks/useAuth";
 import { onFollowChange } from "../utils/followEvents";
 
@@ -60,11 +60,15 @@ function ProfileView({ userId }) {
         setProfile((prev) => {
           if (!prev) return prev;
           if (change.userId === prev.id) {
-            return { ...prev, isFollowing: change.following, followerCount: change.followerCount };
+            return {
+              ...prev,
+              isFollowing: change.following,
+              isRequested: change.requested,
+              followerCount: change.followerCount,
+            };
           }
-          if (isMe) {
-            const delta = change.following ? 1 : -1;
-            return { ...prev, followingCount: Math.max(0, prev.followingCount + delta) };
+          if (isMe && change.followingDelta) {
+            return { ...prev, followingCount: Math.max(0, prev.followingCount + change.followingDelta) };
           }
           return prev;
         });
@@ -79,7 +83,15 @@ function ProfileView({ userId }) {
   };
 
   const handleSaved = (updated) => {
-    setProfile((prev) => ({ ...prev, name: updated.name, bio: updated.bio, avatar: updated.avatar }));
+    setProfile((prev) => ({
+      ...prev,
+      name: updated.name,
+      bio: updated.bio,
+      avatar: updated.avatar,
+      isPrivate: updated.isPrivate,
+      // Going public accepts everyone who was waiting, so this can change too.
+      followerCount: updated.followerCount,
+    }));
     updateUser(updated);
     setEditing(false);
   };
@@ -100,6 +112,9 @@ function ProfileView({ userId }) {
       </div>
     );
   }
+
+  // A private account you don't follow: header only, no posts or lists.
+  const locked = profile.isPrivate && !profile.isFollowing && !isMe;
 
   const changePostCount = (delta) =>
     setProfile((prev) => ({ ...prev, postCount: Math.max(0, prev.postCount + delta) }));
@@ -122,7 +137,15 @@ function ProfileView({ userId }) {
         <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
           <Avatar user={profile} size={80} />
           <div className="min-w-0 flex-1">
-            <h1 className="break-words text-2xl font-bold text-gray-900">{profile.name}</h1>
+            <h1 className="break-words text-2xl font-bold text-gray-900">
+              {profile.name}
+              {profile.isPrivate && (
+                <span title="Private account" className="ml-2 inline-block align-middle text-gray-400">
+                  <LockIcon size={18} />
+                  <span className="sr-only">Private account</span>
+                </span>
+              )}
+            </h1>
             {isMe && <p className="break-all text-sm text-gray-500">{me.email}</p>}
             <p className="mt-1 text-sm text-gray-500">
               Joined <time dateTime={profile.createdAt}>{formatDate(profile.createdAt)}</time>
@@ -139,7 +162,13 @@ function ProfileView({ userId }) {
               </button>
             )
           ) : (
-            <FollowButton userId={profile.id} initialFollowing={profile.isFollowing} name={profile.name} />
+            <FollowButton
+              userId={profile.id}
+              initialFollowing={profile.isFollowing}
+              initialRequested={profile.isRequested}
+              isPrivate={profile.isPrivate}
+              name={profile.name}
+            />
           )}
         </div>
 
@@ -149,8 +178,16 @@ function ProfileView({ userId }) {
 
         <dl className="mt-5 grid grid-cols-3 gap-2 border-t border-gray-100 pt-5 text-center">
           <Stat label="Posts" value={profile.postCount} />
-          <Stat label="Followers" value={profile.followerCount} to={`/users/${profile.id}/followers`} />
-          <Stat label="Following" value={profile.followingCount} to={`/users/${profile.id}/following`} />
+          <Stat
+            label="Followers"
+            value={profile.followerCount}
+            to={locked ? undefined : `/users/${profile.id}/followers`}
+          />
+          <Stat
+            label="Following"
+            value={profile.followingCount}
+            to={locked ? undefined : `/users/${profile.id}/following`}
+          />
         </dl>
 
         {editing && (
@@ -158,51 +195,71 @@ function ProfileView({ userId }) {
         )}
       </section>
 
-      <section aria-label={`Posts by ${profile.name}`} className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-gray-900">Posts</h2>
-          <div role="group" aria-label="Posts layout" className="flex gap-1 rounded-xl bg-gray-100 p-1">
-            <ViewButton label="Grid view" active={view === "grid"} onClick={showGrid}>
-              <GridIcon />
-            </ViewButton>
-            <ViewButton label="List view" active={view === "list"} onClick={showList}>
-              <ListIcon />
-            </ViewButton>
+      {locked ? (
+        <PrivateNotice name={profile.name} requested={profile.isRequested} />
+      ) : (
+        <section aria-label={`Posts by ${profile.name}`} className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">Posts</h2>
+            <div role="group" aria-label="Posts layout" className="flex gap-1 rounded-xl bg-gray-100 p-1">
+              <ViewButton label="Grid view" active={view === "grid"} onClick={showGrid}>
+                <GridIcon />
+              </ViewButton>
+              <ViewButton label="List view" active={view === "list"} onClick={showList}>
+                <ListIcon />
+              </ViewButton>
+            </div>
           </div>
-        </div>
 
-        {/* Stays under the navbar while scrolling through an opened post. */}
-        {view === "list" && openedPostId && (
-          <div className="sticky top-16 z-5 -mx-1 rounded-xl bg-white/90 px-1 py-2 shadow-sm ring-1 ring-gray-200 backdrop-blur">
-            <button
-              type="button"
-              onClick={showGrid}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              &larr; Back to grid
-            </button>
-          </div>
-        )}
+          {/* Stays under the navbar while scrolling through an opened post. */}
+          {view === "list" && openedPostId && (
+            <div className="sticky top-16 z-5 -mx-1 rounded-xl bg-white/90 px-1 py-2 shadow-sm ring-1 ring-gray-200 backdrop-blur">
+              <button
+                type="button"
+                onClick={showGrid}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              >
+                &larr; Back to grid
+              </button>
+            </div>
+          )}
 
-        {/* Re-fetch after a profile edit so the cards show the new name/avatar. */}
-        <FeedList
-          key={`${profile.name}|${profile.avatar}`}
-          endpoint={`/users/${profile.id}/posts`}
-          view={view}
-          scrollToId={openedPostId}
-          onOpenPost={openPost}
-          showCreate={isMe}
-          onPostCreated={() => changePostCount(1)}
-          onPostDeleted={() => changePostCount(-1)}
-          emptyTitle="No posts yet"
-          emptyMessage={
-            isMe
-              ? "Share your first post above."
-              : `${profile.name} hasn't posted anything yet.`
-          }
-        />
-      </section>
+          {/* Re-fetch after a profile edit so the cards show the new name/avatar. */}
+          <FeedList
+            key={`${profile.name}|${profile.avatar}`}
+            endpoint={`/users/${profile.id}/posts`}
+            view={view}
+            scrollToId={openedPostId}
+            onOpenPost={openPost}
+            showCreate={isMe}
+            onPostCreated={() => changePostCount(1)}
+            onPostDeleted={() => changePostCount(-1)}
+            emptyTitle="No posts yet"
+            emptyMessage={
+              isMe
+                ? "Share your first post above."
+                : `${profile.name} hasn't posted anything yet.`
+            }
+          />
+        </section>
+      )}
     </div>
+  );
+}
+
+function PrivateNotice({ name, requested }) {
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
+      <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full text-gray-900 ring-2 ring-gray-900">
+        <LockIcon size={24} />
+      </span>
+      <h2 className="mt-4 font-semibold text-gray-900">This account is private</h2>
+      <p className="mt-1 text-sm text-gray-500">
+        {requested
+          ? `Your follow request is waiting for ${name} to accept it.`
+          : `Follow ${name} to see their posts.`}
+      </p>
+    </section>
   );
 }
 
