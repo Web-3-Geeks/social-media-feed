@@ -48,11 +48,19 @@ export const updateProfileRules = [
     .isURL({ protocols: ["https"], require_protocol: true })
     .withMessage("Avatar must be a valid https:// link"),
 
+  // Only true/false. toBoolean makes the value a real boolean for the controller.
+  body("isPrivate")
+    .optional()
+    .isBoolean({ strict: true })
+    .withMessage("isPrivate must be true or false")
+    .toBoolean(true),
+
   body().custom((_, { req }) => {
     if (
       req.body?.name === undefined &&
       req.body?.bio === undefined &&
-      req.body?.avatar === undefined
+      req.body?.avatar === undefined &&
+      req.body?.isPrivate === undefined
     ) {
       throw new Error("Nothing to update");
     }

@@ -1,6 +1,7 @@
 import { body, param, query } from "express-validator";
 
 const MAX_CONTENT = 500;
+const MAX_SEARCH = 100;
 
 export const postIdRules = [param("id").isMongoId().withMessage("Invalid post id")];
 
@@ -14,6 +15,12 @@ export const listPostsRules = [
   // Optional cursor for "load more": the createdAt and id of the last post the client has.
   query("before").optional().isISO8601().withMessage("before must be an ISO date"),
   query("beforeId").optional().isMongoId().withMessage("beforeId must be a post id"),
+  // Only used by GET /api/posts (post search). An empty value means "no search".
+  query("search")
+    .optional()
+    .isString().withMessage("Search must be text")
+    .trim()
+    .isLength({ max: MAX_SEARCH }).withMessage(`Search cannot exceed ${MAX_SEARCH} characters`),
   query().custom((_, { req }) => {
     if (Boolean(req.query.before) !== Boolean(req.query.beforeId)) {
       throw new Error("before and beforeId must be sent together");

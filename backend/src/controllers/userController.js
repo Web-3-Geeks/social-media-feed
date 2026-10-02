@@ -1,8 +1,11 @@
 import User from "../models/User.js";
-import Follow from "../models/Follow.js";
+import FollowRequest from "../models/FollowRequest.js";
 import AppError from "../utils/AppError.js";
+import { escapeRegex } from "../utils/escapeRegex.js";
+import { acceptFollowRequest, withFollowState } from "../utils/followService.js";
 
-const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PUBLIC_FIELDS =
+  "name avatar bio followerCount followingCount postCount isPrivate createdAt";
 
 export const getMyProfile = (req, res) => {
   res.status(200).json({
@@ -12,32 +15,41 @@ export const getMyProfile = (req, res) => {
 };
 
 export const getUserProfile = async (req, res) => {
-  const user = await User.findById(req.params.id).select(
-    "name avatar bio followerCount followingCount postCount createdAt",
-  );
+  const user = await User.findById(req.params.id).select(PUBLIC_FIELDS);
   if (!user) {
     throw new AppError("User not found", 404);
   }
 
-  const isFollowing = await Follow.exists({
-    follower: req.user._id,
-    following: user._id,
-  });
+  // The profile header (name, bio, counts) is visible even for a private
+  // account, like on Instagram. Only the posts and lists are locked.
+  const [withState] = await withFollowState([user.toJSON()], req.user._id);
 
   res.status(200).json({
     success: true,
-    user: { ...user.toJSON(), isFollowing: Boolean(isFollowing) },
+    user: withState,
   });
 };
 
 export const updateMyProfile = async (req, res) => {
-  const { name, bio, avatar } = req.body;
+  const { name, bio, avatar, isPrivate } = req.body;
+  const goingPublic = isPrivate === false && req.user.isPrivate;
 
   if (name !== undefined) req.user.name = name;
   if (bio !== undefined) req.user.bio = bio || "";
   if (avatar !== undefined) req.user.avatar = avatar || "";
+  if (isPrivate !== undefined) req.user.isPrivate = isPrivate;
 
   await req.user.save();
+
+  // A public account has nothing to approve, so everyone waiting is let in.
+  if (goingPublic) {
+    const pending = await FollowRequest.find({ to: req.user._id }).select("from");
+    for (const request of pending) {
+      await acceptFollowRequest(request.from, req.user._id);
+    }
+    const fresh = await User.findById(req.user._id);
+    return res.status(200).json({ success: true, message: "Profile updated", user: fresh });
+  }
 
   res.status(200).json({
     success: true,
@@ -58,25 +70,16 @@ export const searchUsers = async (req, res) => {
   };
 
   const [users, total] = await Promise.all([
-    User.find(filter)
-      .select("name avatar bio followerCount followingCount postCount createdAt")
-      .skip(skip)
-      .limit(limit),
+    User.find(filter).select(PUBLIC_FIELDS).skip(skip).limit(limit),
     User.countDocuments(filter),
   ]);
 
-  const follows = await Follow.find({
-    follower: req.user._id,
-    following: { $in: users.map((u) => u._id) },
-  }).select("following");
-  const followingIds = new Set(follows.map((f) => String(f.following)));
-
   res.status(200).json({
     success: true,
-    users: users.map((u) => ({
-      ...u.toJSON(),
-      isFollowing: followingIds.has(String(u._id)),
-    })),
+    users: await withFollowState(
+      users.map((u) => u.toJSON()),
+      req.user._id,
+    ),
     pagination: {
       page,
       limit,
@@ -85,4 +88,3 @@ export const searchUsers = async (req, res) => {
     },
   });
 };
-

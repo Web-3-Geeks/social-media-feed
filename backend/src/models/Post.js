@@ -6,7 +6,6 @@ const postSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Post must have an author"],
-      index: true,
     },
     content: {
       type: String,
@@ -34,6 +33,9 @@ const postSchema = new mongoose.Schema(
 );
 
 postSchema.index({ createdAt: -1, _id: -1 });
+// A profile's posts and the following feed: filter by author and sort from the
+// same index. Also covers plain "posts by author" lookups.
+postSchema.index({ author: 1, createdAt: -1, _id: -1 });
 
 postSchema.set("toJSON", {
   transform: (doc, ret) => {

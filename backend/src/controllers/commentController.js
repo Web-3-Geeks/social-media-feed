@@ -1,14 +1,20 @@
 import Comment from "../models/Comment.js";
 import Post from "../models/Post.js";
 import AppError from "../utils/AppError.js";
+import { notify, unnotify } from "../utils/notify.js";
+import { assertCanViewUser } from "../utils/privacy.js";
 
 const AUTHOR_FIELDS = "name avatar";
 
-const ensurePostExists = async (postId) => {
-  const exists = await Post.exists({ _id: postId });
-  if (!exists) {
+// Also blocks liking/commenting on (or reading comments of) a private
+// account's post when you don't follow them.
+const findPostOr404 = async (postId, viewerId) => {
+  const post = await Post.findById(postId).select("author");
+  if (!post) {
     throw new AppError("Post not found", 404);
   }
+  await assertCanViewUser(viewerId, post.author);
+  return post;
 };
 
 const findCommentOr404 = async (id) => {
@@ -27,7 +33,7 @@ const assertCommentOwner = (comment, user) => {
 
 export const createComment = async (req, res) => {
   const postId = req.params.id;
-  await ensurePostExists(postId);
+  const { author } = await findPostOr404(postId, req.user._id);
 
   const comment = await Comment.create({
     post: postId,
@@ -35,8 +41,20 @@ export const createComment = async (req, res) => {
     content: req.body.content,
   });
   // timestamps: false so a new comment doesn't make the post look "Edited".
-  await Post.updateOne({ _id: postId }, { $inc: { commentCount: 1 } }, { timestamps: false });
+  await Post.updateOne(
+    { _id: postId },
+    { $inc: { commentCount: 1 } },
+    { timestamps: false },
+  );
   await comment.populate("author", AUTHOR_FIELDS);
+
+  await notify({
+    recipient: author,
+    actor: req.user._id,
+    type: "COMMENT",
+    post: postId,
+    comment: comment._id,
+  });
 
   res.status(201).json({
     success: true,
@@ -47,7 +65,7 @@ export const createComment = async (req, res) => {
 
 export const getComments = async (req, res) => {
   const postId = req.params.id;
-  await ensurePostExists(postId);
+  await findPostOr404(postId, req.user._id);
 
   const limit = Number(req.query.limit) || 20;
   const filter = { post: postId };
@@ -100,6 +118,8 @@ export const deleteComment = async (req, res) => {
     { $inc: { commentCount: -1 } },
     { timestamps: false },
   );
+
+  await unnotify({ comment: comment._id });
 
   res.status(200).json({
     success: true,

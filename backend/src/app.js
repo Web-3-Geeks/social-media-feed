@@ -11,6 +11,8 @@ import userRoutes from "./routes/userRoutes.js";
 import postRoutes from "./routes/postRoutes.js";
 import commentRoutes from "./routes/commentRoutes.js";
 import feedRoutes from "./routes/feedRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+import followRequestRoutes from "./routes/followRequestRoutes.js";
 
 const app = express();
 
@@ -49,6 +51,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/feed", feedRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/follow-requests", followRequestRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

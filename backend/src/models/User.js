@@ -48,10 +48,19 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0
-    }
+    },
+    // Private: following needs approval, and only followers see the posts.
+    isPrivate: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );
+
+// The feed looks up private accounts on every request. Partial: only private
+// users are in this index, so it stays tiny.
+userSchema.index({ isPrivate: 1 }, { partialFilterExpression: { isPrivate: true } });
 
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;

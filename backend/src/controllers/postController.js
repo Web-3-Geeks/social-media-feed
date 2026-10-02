@@ -4,6 +4,9 @@ import Post from "../models/Post.js";
 import AppError from "../utils/AppError.js";
 import User from "../models/User.js";
 import Follow from "../models/Follow.js";
+import Notification from "../models/Notification.js";
+import { assertCanViewUser, hiddenAuthorIds } from "../utils/privacy.js";
+import { escapeRegex } from "../utils/escapeRegex.js";
 
 const AUTHOR_FIELDS = "name avatar";
 
@@ -58,12 +61,20 @@ const FEED_SORT = { createdAt: -1, _id: -1 };
 
 export const getFeed = async (req, res) => {
   const limit = Number(req.query.limit) || 10;
+  // Everyone's posts, except private accounts you don't follow.
+  const visible = { author: { $nin: await hiddenAuthorIds(req.user._id) } };
+  // ?search= narrows the same feed to posts whose text contains the keyword
+  // (any case), so privacy and both pagination modes keep working as they are.
+  const search = req.query.search?.trim();
+  if (search) {
+    visible.content = { $regex: escapeRegex(search), $options: "i" };
+  }
 
   // Cursor mode (default): the newest posts, or with before/beforeId the posts
   // older than the last one the client has. Unlike skip/offset, this can't repeat
   // or skip posts when posts are created or deleted between requests.
   if (!req.query.page) {
-    const filter = {};
+    const filter = { ...visible };
     if (req.query.before) {
       const before = new Date(req.query.before);
       filter.$or = [
@@ -91,12 +102,12 @@ export const getFeed = async (req, res) => {
   const skip = (page - 1) * limit;
 
   const [posts, total] = await Promise.all([
-    Post.find()
+    Post.find(visible)
       .sort(FEED_SORT)
       .skip(skip)
       .limit(limit)
       .populate("author", AUTHOR_FIELDS),
-    Post.countDocuments(),
+    Post.countDocuments(visible),
   ]);
 
   const totalPages = Math.ceil(total / limit);
@@ -149,9 +160,8 @@ export const getFollowingFeed = async (req, res) => {
 // pagination as the feeds.
 export const getUserPosts = async (req, res) => {
   const userId = req.params.id;
-  if (!(await User.exists({ _id: userId }))) {
-    throw new AppError("User not found", 404);
-  }
+  // 404 for an unknown user, 403 for a private account you don't follow.
+  await assertCanViewUser(req.user._id, userId);
 
   const limit = Number(req.query.limit) || 10;
   const filter = { author: userId };
@@ -185,6 +195,7 @@ export const getPost = async (req, res) => {
   if (!post) {
     throw new AppError("Post not found", 404);
   }
+  if (post.author) await assertCanViewUser(req.user._id, post.author._id);
 
   const [postWithLike] = await withLikedByMe([post], req.user._id);
   res.status(200).json({ success: true, post: postWithLike });
@@ -218,6 +229,7 @@ export const deletePost = async (req, res) => {
   await Promise.all([
     Like.deleteMany({ post: post._id }),
     Comment.deleteMany({ post: post._id }),
+    Notification.deleteMany({ post: post._id }),
     User.updateOne(
       { _id: post.author, postCount: { $gt: 0 } },
       { $inc: { postCount: -1 } },

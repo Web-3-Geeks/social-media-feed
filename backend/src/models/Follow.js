@@ -17,6 +17,10 @@ const followSchema = new mongoose.Schema(
 );
 
 followSchema.index({ follower: 1, following: 1 }, { unique: true });
+// Followers / following lists, newest first, read straight from the index
+// (no in-memory sort).
+followSchema.index({ following: 1, createdAt: -1, _id: -1 });
+followSchema.index({ follower: 1, createdAt: -1, _id: -1 });
 
 followSchema.pre("validate", function () {
   if (this.follower.equals(this.following)) {
